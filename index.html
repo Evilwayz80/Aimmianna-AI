@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aimmianna">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+<title>Aimmianna — your companion</title>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1>Aimmianna — your companion</h1>
+    <p id="versionLine">Aimmianna iPhone PWA v1.0</p>
+    <p class="sub">Straightforward, direct, no sugarcoating. Here when things are a train wreck, and when you're in your head.</p>
+  </header>
+
+  <!-- ============ HER ROOM ============ -->
+  <section id="room" aria-label="Aimmianna's room">
+    <div id="roomStage">
+      <div class="led-strip" aria-hidden="true"></div>
+      <div class="poster poster-moon" aria-hidden="true"><span class="poster-moon-glyph"></span><span class="poster-text">LIL PEEP</span></div>
+      <div class="poster poster-sober" aria-hidden="true"><span class="poster-text">COME OVER<br>WHEN YOU'RE<br>SOBER</span></div>
+      <div class="plush" aria-hidden="true"><span class="plush-body"></span><span class="plush-ear left"></span><span class="plush-ear right"></span><span class="plush-face"></span></div>
+      <div id="figureWrap" class="idle-vibe" title="Tap Aimmianna to talk to her">
+        <img id="figure" src="assets/figure/aimmianna_human_fullbody.png" alt="Aimmianna, standing in her Gothic room" draggable="false">
+        <div id="idleFx" aria-hidden="true"></div>
+        <div id="idleLabel" aria-live="polite">vibing under the LEDs</div>
+      </div>
+      <div class="floor" aria-hidden="true"></div>
+    </div>
+    <p id="wardrobeStatus" class="status-line">Wardrobe: usual outfit • hair: black and red</p>
+    <p id="outfitStatus" class="status-line">Outfit: Auto —</p>
+    <p id="homeStatus" class="status-line">Bedtime off. Alarm off.</p>
+
+    <div class="big-row">
+      <button id="roomBtn" class="big-btn" type="button">ROOM</button>
+      <button id="wardrobeBtn" class="big-btn" type="button">WARDROBE</button>
+    </div>
+    <p id="wardrobeHint" class="hint">Tap WARDROBE above to change her outfit, hair and makeup — tap this line to hide it.</p>
+  </section>
+
+  <!-- ============ HUB ============ -->
+  <section id="hub" aria-label="Aimmianna's hub">
+    <h2>Aimmianna's Hub — everything in one place:</h2>
+    <div class="btn-grid">
+      <button type="button" data-goto="chatSection">Talk</button>
+      <button type="button" data-goto="wardrobeSection">WARDROBE — change clothes</button>
+      <button type="button" data-goto="careSection">Makeup</button>
+      <button type="button" data-goto="careSection">Care</button>
+      <button type="button" data-goto="gamesSection">Games</button>
+      <button type="button" data-goto="settingsSection">Settings</button>
+    </div>
+    <p class="hint">The big WARDROBE button is right above, under her picture — tap it to change her outfit, hair or makeup.</p>
+    <button id="readBtn" class="wide-btn" type="button">Read with her for a while</button>
+    <p class="hint">Idle life runs on its own: she dances, cleans, does art, smokes, flirts and stretches, about every 70 seconds. Tap her to talk.</p>
+  </section>
+
+  <!-- ============ HOUSE ============ -->
+  <section id="house" aria-label="Aimmianna's house">
+    <h2>Aimmianna's house — tap an object:</h2>
+    <div class="btn-grid">
+      <button type="button" data-goto="tvSection">TV</button>
+      <button type="button" data-goto="stereoSection">Stereo</button>
+      <button type="button" data-goto="gamesSection">Console</button>
+      <button type="button" data-goto="albumSection">Album</button>
+    </div>
+
+    <h3>Chalkboard — on its own wall, tap for notes:</h3>
+    <button type="button" class="wide-btn" data-goto="notesSection">Chalkboard — Notes</button>
+
+    <div class="btn-grid">
+      <button type="button" data-goto="bedSection">Bed</button>
+      <button type="button" data-goto="alarmSection">Alarm</button>
+      <button type="button" data-goto="calendarSection">Calendar</button>
+      <button type="button" data-goto="wardrobeSection">Outfits</button>
+    </div>
+    <div class="btn-grid">
+      <button type="button" data-goto="wardrobeSection">Wardrobe</button>
+      <button type="button" data-goto="careSection">Care &amp; Makeup</button>
+    </div>
+
+    <div class="memory-box">
+      <button id="memoryToggle" class="wide-btn" type="button">Show / hide Her memory</button>
+      <div id="memoryView" class="memory-view" hidden></div>
+      <button id="clearMemoryBtn" class="wide-btn danger" type="button">Clear Her memory</button>
+    </div>
+  </section>
+
+  <!-- ============ WARDROBE ============ -->
+  <section id="wardrobeSection" aria-label="Wardrobe">
+    <h2>Aimmianna's Wardrobe</h2>
+    <p class="help">Tap an outfit, a hair colour or a makeup look and she wears it straight away — in here and in her room. Each pick swaps her whole figure picture. Makeup: one lipstick, one eyeshadow, one blush and one foundation can be on at the same time. Tap a picked shade again to take it off. Everything here is her new look.</p>
+    <div class="preview-wrap">
+      <img id="wardrobePreview" src="assets/figure/aimmianna_human_fullbody.png" alt="Wardrobe preview of Aimmianna">
+    </div>
+    <p id="wardrobeMsg" class="status-line" aria-live="polite"></p>
+
+    <h3>Outfits — tap one to dress her in it:</h3>
+    <div id="outfitList" class="pick-list"></div>
+    <button type="button" class="wide-btn" data-wardrobe-clear="outfit">Usual outfit (clear outfit pick)</button>
+
+    <h3>Hair — tap a colour or style to change her hair:</h3>
+    <p class="help">Tap a style to change her hair. Picking hair keeps her outfit — only the hair changes.</p>
+    <div id="hairList" class="pick-list"></div>
+    <button type="button" class="wide-btn" data-wardrobe-clear="hair">Black and red hair (wash the dye out)</button>
+
+    <h3>Makeup — pick one of each kind, all at once:</h3>
+    <p class="help">Lipstick, eyeshadow, blush and foundation can all be on together. Tap a shade to put it on, tap it again to take it off.</p>
+    <h4>Lipstick — tap a shade:</h4>
+    <div id="lipstickList" class="pick-list"></div>
+    <h4>Eyeshadow — tap a shade:</h4>
+    <div id="eyeshadowList" class="pick-list"></div>
+    <h4>Blush — tap a shade:</h4>
+    <div id="blushList" class="pick-list"></div>
+    <h4>Foundation — tap a shade:</h4>
+    <div id="foundationList" class="pick-list"></div>
+    <button type="button" class="wide-btn" data-wardrobe-clear="makeup">Wipe all makeup off</button>
+    <button type="button" class="wide-btn accent" id="fullGlamBtn">Full Glam — lips + eyes + blush, all at once</button>
+
+    <h3>Take it off — undress her, piece by piece:</h3>
+    <p class="help">Taking things off is part of dressing her. Strip one piece, or take everything off and start fresh with just her.</p>
+    <button type="button" class="wide-btn" data-wardrobe-clear="outfit">Take her outfit off</button>
+    <button type="button" class="wide-btn" data-wardrobe-clear="hair">Take her hair colour off</button>
+    <button type="button" class="wide-btn danger" id="takeAllOffBtn">Take EVERYTHING off</button>
+    <button type="button" class="wide-btn" id="resetWardrobeBtn">Reset everything — back to her usual look</button>
+  </section>
+
+  <!-- ============ CARE ============ -->
+  <section id="careSection" aria-label="Care and makeup studio">
+    <h2>Care &amp; Makeup Studio</h2>
+    <p class="help">Pick a tool below, then tap it onto Aimmianna — tap her hair, her face or her lips. Hair, teeth and makeup — plus Bath time below, where you wash her and dry her off.</p>
+    <div id="careStage">
+      <img id="careFigure" src="assets/figure/aimmianna_human_fullbody.png" alt="Aimmianna in the care studio — tap her hair, face or lips to use the picked tool">
+      <div id="careBath" class="care-bath" hidden>
+        <div class="tub"></div>
+        <div id="careBubbles" class="bubbles" hidden></div>
+        <div id="careSteam" class="steam" hidden></div>
+      </div>
+      <div id="careSparkle" class="sparkle" aria-hidden="true"></div>
+    </div>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="bathBtn">Bath time</button>
+      <button type="button" class="wide-btn" id="washBtn">Wash her</button>
+      <button type="button" class="wide-btn" id="dryBtn">Dry her off</button>
+    </div>
+    <p id="careStatus" class="status-line" aria-live="polite">Pick a tool, then tap it onto me. I don't bite. Much.</p>
+    <p id="careCounts" class="status-line">Hair brushed 0 times • Teeth brushed 0 times • Baths 0</p>
+    <div id="toolList" class="tool-list"></div>
+  </section>
+
+  <!-- ============ GAMES ============ -->
+  <section id="gamesSection" aria-label="Retro console games">
+    <h2>Retro Console — play with Aimmianna</h2>
+    <div class="btn-row tabs" role="tablist">
+      <button type="button" id="tabMemory" class="tab active" role="tab">Memory</button>
+      <button type="button" id="tabEmber" class="tab" role="tab">Ember</button>
+      <button type="button" id="tabDice" class="tab" role="tab">Dice</button>
+    </div>
+    <p id="gameStatus" class="status-line" aria-live="polite">Memory Match — flip two cards, find all 8 pairs. Moves: 0</p>
+
+    <div id="memoryGame" class="game-pane">
+      <div id="memoryGrid" class="memory-grid"></div>
+      <button type="button" class="wide-btn" id="memoryAgain">Shuffle &amp; play again</button>
+    </div>
+
+    <div id="emberGame" class="game-pane" hidden>
+      <div id="emberField" class="ember-field" tabindex="0" aria-label="Catch the Ember play field">
+        <p id="emberHint">Tap Start to play!</p>
+        <button type="button" id="emberTarget" class="ember-target" hidden aria-label="Ember target"></button>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="wide-btn" id="emberStart">Start (30s)</button>
+        <button type="button" class="wide-btn" id="emberAgain">Play again</button>
+      </div>
+      <p class="help">How to play: embers and stars pop up — tap them fast. Ember = 1 point, star = 3 points (smaller, hops away quicker). Score 15+ before the 30 seconds run out to win. Your best score is saved on this phone.</p>
+    </div>
+
+    <div id="diceGame" class="game-pane" hidden>
+      <div id="diceFace" class="dice-face" aria-live="polite">⚀ ⚀</div>
+      <p id="diceResult" class="status-line">Tap Roll and let's see what luck says, bestie.</p>
+      <button type="button" class="wide-btn" id="diceRoll">Roll the dice</button>
+      <p class="help">How to play: tap Roll — two dice, add them up. Snake eyes (2) and boxcars (12) are the rare ones, 7 is the lucky one. Just for fun, no score to beat.</p>
+    </div>
+  </section>
+
+  <!-- ============ TV / STEREO / ALBUM ============ -->
+  <section id="tvSection" aria-label="TV">
+    <h2>TV</h2>
+    <p class="help">Your own videos only — pick a video from this phone to watch with her. Nothing is uploaded anywhere.</p>
+    <label class="file-btn" for="tvFile">Pick a video from this phone</label>
+    <input type="file" id="tvFile" accept="video/*" hidden>
+    <video id="tvPlayer" controls playsinline hidden></video>
+    <p id="tvStatus" class="status-line">No video picked yet.</p>
+  </section>
+
+  <section id="stereoSection" aria-label="Stereo">
+    <h2>Stereo</h2>
+    <p class="help">Your own music only — pick a song from this phone. Nothing is uploaded anywhere.</p>
+    <label class="file-btn" for="stereoFile">Pick a song from this phone</label>
+    <input type="file" id="stereoFile" accept="audio/*" hidden>
+    <audio id="stereoPlayer" controls hidden></audio>
+    <p id="stereoStatus" class="status-line">No song picked yet.</p>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="lilPeepBtn">Lil Peep mood</button>
+      <button type="button" class="wide-btn" id="nirvanaBtn">Nirvana mood</button>
+    </div>
+    <p id="musicMood" class="status-line"></p>
+  </section>
+
+  <section id="albumSection" aria-label="Photo album">
+    <h2>Aimmianna's Photo Album</h2>
+    <p class="help">Tony's photos, from his own phone. Pink + black, goth style. Photos are kept on this phone only.</p>
+    <div id="albumView" class="album-view">
+      <p id="albumEmpty">No photos in the album yet.<br>Tap 'Add a photo from my phone' to add one of yours.</p>
+      <img id="albumImg" alt="Album photo" hidden>
+    </div>
+    <p id="albumLabel" class="status-line"></p>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="albumPrev">Previous</button>
+      <button type="button" class="wide-btn" id="albumNext">Next</button>
+    </div>
+    <label class="file-btn" for="albumFile">Add a photo from my phone</label>
+    <input type="file" id="albumFile" accept="image/*" hidden>
+    <button type="button" class="wide-btn danger" id="albumRemove">Remove this photo</button>
+  </section>
+
+  <!-- ============ NOTES ============ -->
+  <section id="notesSection" aria-label="Chalkboard notes">
+    <h2>Chalkboard — Notes</h2>
+    <p class="help">Notes live on this phone only.</p>
+    <label for="noteInput">Write a text note for the chalkboard…</label>
+    <textarea id="noteInput" rows="3" placeholder="Write a text note for the chalkboard…"></textarea>
+    <button type="button" class="wide-btn" id="noteSave">Save text note</button>
+    <button type="button" class="wide-btn danger" id="noteClear">Clear all text notes</button>
+    <h3>Text notes (kept from before):</h3>
+    <div id="noteList" class="note-list">No text notes yet.</div>
+  </section>
+
+  <!-- ============ BED / ALARM / CALENDAR ============ -->
+  <section id="bedSection" aria-label="Bedtime">
+    <h2>Bed — bedtime reminder</h2>
+    <p class="help">She reminds you when it's bedtime — but only while the app is open. iOS Safari can't wake a closed web app, so keep the app open at bedtime if you want the reminder.</p>
+    <label for="bedtimeTime">Bedtime:</label>
+    <input type="time" id="bedtimeTime" value="22:30">
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="bedtimeOn">Turn bedtime reminder on</button>
+      <button type="button" class="wide-btn" id="bedtimeOff">Turn it off</button>
+    </div>
+    <p id="bedtimeStatus" class="status-line">Bedtime off.</p>
+  </section>
+
+  <section id="alarmSection" aria-label="Alarm">
+    <h2>Alarm clock</h2>
+    <p class="help">Same as bedtime: the alarm only rings while the app is open. iOS Safari can't wake a closed web app.</p>
+    <label for="alarmTime">Alarm:</label>
+    <input type="time" id="alarmTime" value="07:00">
+    <label class="check-row"><input type="checkbox" id="alarmDaily"> Every day</label>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="alarmOn">Turn alarm on</button>
+      <button type="button" class="wide-btn" id="alarmOff">Turn it off</button>
+    </div>
+    <p id="alarmStatus" class="status-line">Alarm off.</p>
+  </section>
+
+  <section id="calendarSection" aria-label="Calendar">
+    <h2>Calendar</h2>
+    <div class="cal-head">
+      <button type="button" id="calPrev" aria-label="Previous month">‹</button>
+      <span id="calTitle"></span>
+      <button type="button" id="calNext" aria-label="Next month">›</button>
+    </div>
+    <div id="calGrid" class="cal-grid"></div>
+    <p id="calDayLabel" class="status-line">Tap a day to add a note.</p>
+    <label for="calNote">Note for that day:</label>
+    <textarea id="calNote" rows="2" placeholder="Write a reminder for the picked day…"></textarea>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="calSave">Save note</button>
+      <button type="button" class="wide-btn danger" id="calDelete">Delete note</button>
+    </div>
+  </section>
+
+  <!-- ============ CHAT ============ -->
+  <section id="chatSection" aria-label="Talk to Aimmianna">
+    <h2>Talk to Aimmianna — tap her above, or type below:</h2>
+    <button type="button" class="wide-btn" id="greetingBtn">Hear Aimmianna's greeting</button>
+    <p class="help">Greeting voice: a recording Tony made for her — a song quote he likes, played when the app opens (at most once a day). It is not her real voice and it can't speak new sentences.</p>
+    <div id="chatScroll" class="chat-scroll">
+      <div id="chatBox" class="chat-box" aria-live="polite"></div>
+    </div>
+    <div class="chat-row">
+      <input type="text" id="chatInput" placeholder="Talk to Aimmianna…" autocomplete="off" enterkeyhint="send" aria-label="Message Aimmianna">
+      <button type="button" id="sendBtn">Send</button>
+      <button type="button" id="micBtn" aria-label="Speak instead of typing">Mic</button>
+    </div>
+    <button type="button" class="wide-btn" id="speakBtn">Voice: on (tap to turn off)</button>
+    <button type="button" class="wide-btn" id="greetingAutoBtn">Greeting on open: on (tap to turn off)</button>
+    <p class="help">Her chat replies use the phone's text-to-speech voice, which is not her real voice — unless you set her AI-made voice in Settings below (Typecast — free).</p>
+    <p id="voiceStatus" class="status-line">Voice: picking the phone's best voice…</p>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="settingsSection" aria-label="Settings">
+    <h2>Settings — talk with real AI</h2>
+    <p id="aiStatus" class="status-line">Real AI: off — add your free Gemini key to talk with the real AI. Without it, she uses her own built-in lines.</p>
+    <label for="aiKeyInput">Gemini API key</label>
+    <input type="password" id="aiKeyInput" placeholder="Paste your free Gemini API key here" autocomplete="off">
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="aiSave">Save key</button>
+      <button type="button" class="wide-btn" id="aiRemove">Remove key</button>
+    </div>
+    <p class="help">Free key: open aistudio.google.com in your browser → Get API key → Create API key → copy it here. The key never leaves this phone except to talk to Google's AI.</p>
+
+    <h3>Her speaking voice — Typecast (free)</h3>
+    <p id="typecastStatus" class="status-line">Her speaking voice: Typecast not set — add your Typecast key + voice ID below to hear her AI-made voice (free, 15,000 characters a month).</p>
+    <label for="typecastKeyInput">Typecast API key</label>
+    <input type="password" id="typecastKeyInput" placeholder="Paste your Typecast API key here" autocomplete="off">
+    <label for="typecastVoiceInput">Typecast voice ID</label>
+    <input type="text" id="typecastVoiceInput" placeholder="Paste your Typecast voice ID here (starts with uc_ for a cloned voice)" autocomplete="off">
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="typecastSave">Save voice</button>
+      <button type="button" class="wide-btn" id="typecastRemove">Remove voice</button>
+      <button type="button" class="wide-btn" id="typecastTest">Test voice</button>
+    </div>
+    <p class="help">How to set it up (free, no card): 1) Go to typecast.ai and make a free account. 2) Open the API Console at typecast.ai/api-console and start the free API plan — that is the plan this app uses, not a Studio subscription. 3) Copy the API key from the API Console. 4) Clone the voice from the clip you made (your emmi-voice.wav) — cloning happens in your Typecast account, not in this app. 5) Copy the voice ID: a cloned voice starts with uc_, a built-in voice starts with tc_. 6) Paste both here and tap Save voice. Her chat replies will then speak in that voice. The free API plan is 15,000 characters a month. If the app says the key is denied, generate a current key in the API Console — old Starter keys don't work with the voice API.</p>
+
+    <h3>Her speaking voice — Fish Audio (free, backup)</h3>
+    <p id="fishStatus" class="status-line">Fish Audio (backup): not set — Typecast above is the free first choice.</p>
+    <label for="fishKeyInput">Fish Audio API key</label>
+    <input type="password" id="fishKeyInput" placeholder="Paste your Fish Audio API key here" autocomplete="off">
+    <label for="fishVoiceInput">Fish Audio voice ID</label>
+    <input type="text" id="fishVoiceInput" placeholder="Paste your Fish Audio voice ID here" autocomplete="off">
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="fishSave">Save voice</button>
+      <button type="button" class="wide-btn" id="fishRemove">Remove voice</button>
+      <button type="button" class="wide-btn" id="fishTest">Test voice</button>
+    </div>
+    <p class="help">How to set it up (free, no card): 1) Go to fish.audio and make a free account. 2) Clone the voice from the clip you made (your emmi-voice.wav) — cloning happens in your Fish Audio account, not in this app. 3) Copy the voice ID from your cloned voice. 4) Tap Get Started, then "Get your API key" — it is shown once, so copy it right away. 5) Paste both here and tap Save voice. Her chat replies will then speak in that voice if Typecast above isn't set, using the free s2.1-pro-free model ($0, no credit needed). The free offer is time-limited, so if it ever stops working this line will say so plainly and she'll just use the phone's voice instead.</p>
+
+    <h3>Her speaking voice — ElevenLabs (backup)</h3>
+    <p id="elevenStatus" class="status-line">ElevenLabs (backup): not set — Typecast above is the free first choice, then Fish Audio.</p>
+    <label for="elevenKeyInput">ElevenLabs API key</label>
+    <input type="password" id="elevenKeyInput" placeholder="Paste your ElevenLabs API key here" autocomplete="off">
+    <label for="elevenVoiceInput">ElevenLabs voice ID</label>
+    <input type="text" id="elevenVoiceInput" placeholder="Paste your ElevenLabs voice ID here" autocomplete="off">
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="elevenSave">Save voice</button>
+      <button type="button" class="wide-btn" id="elevenRemove">Remove voice</button>
+      <button type="button" class="wide-btn" id="elevenTest">Test voice</button>
+    </div>
+    <p class="help">ElevenLabs is the third voice — Typecast above is tried first, then Fish Audio, and ElevenLabs' cloning is NOT free. How to set ElevenLabs up: 1) Make an ElevenLabs account at elevenlabs.io (cloning there is NOT free). 2) In Voice Lab, clone a voice from the clip you made (your emmi-voice.wav). 3) Copy your API key (Profile &gt; API Keys) and the voice ID (click the voice &gt; copy its ID). 4) Paste both here and tap Save voice. Her chat replies will then speak in that voice if Typecast and Fish Audio aren't set. If ElevenLabs ever fails — bad key, no internet, out of quota — she just uses the phone's voice instead, and this line says so.</p>
+
+    <p id="appVersion" class="status-line">Aimmianna iPhone PWA v1.0 — keys live on this phone only, in localStorage. Nothing is ever hardcoded.</p>
+    <p class="help">Add to Home Screen: in Safari, tap Share, then "Add to Home Screen". She'll open full-screen like an app.</p>
+  </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
