@@ -48,12 +48,12 @@ Static hosts such as GitHub Pages can run the app but **not** `server.py`. On th
    - **Set her as my live wallpaper**, then choose **Home screen**. One UI only allows photo and video wallpapers on the lock screen.
 3. On the wallpaper you can tap rooms, devices, the wardrobe and games. Tapping her or Talk opens the full app, since a wallpaper can't take typing. It's the same memory, skills and routine.
 
-Build it yourself (the project is in the `android/` folder; put your own `aimmianna-release.jks` in `android/app/`, it is never committed):
+Build it yourself (the project is in the `android/` folder; put your own `aimmianna-release.jks` in `android/`, it is never committed):
 
 ```bash
+mkdir -p android/app/src/main/assets/www
 cp -r index.html app.js world3d.js styles.css sw.js SAYINGS.json manifest.webmanifest version.json vendor assets \
       android/app/src/main/assets/www/
-mkdir -p android/app/src/main/assets/www  # (run the cp after this)
 cd android && ./gradlew assembleRelease
 # -> app/build/outputs/apk/release/app-release.apk
 ```
