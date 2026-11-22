@@ -1,6 +1,6 @@
 /* Aimmianna 3D service worker — network-first for the app shell, cache-first for
    images/models, never caches /api/ or third-party (Gemini, Spotify, YouTube). */
-const VERSION = "aimmianna-3d-v2.1.0";
+const VERSION = "aimmianna-3d-v2.1.1";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "world3d.js", "vendor/three.module.min.js", "SAYINGS.json", "manifest.webmanifest", "assets/figure/aimmianna_human_fullbody.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).catch(() => {})); });
 self.addEventListener("activate", (e) => {

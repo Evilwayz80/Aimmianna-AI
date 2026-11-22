@@ -6,8 +6,8 @@ android {
         applicationId "com.aimmianna.app"
         minSdk 26
         targetSdk 34
-        versionCode 210          // = APP_BUILD in app.js and "build" in version.json
-        versionName "2.1.0"
+        versionCode 211          // = APP_BUILD in app.js and "build" in version.json
+        versionName "2.1.1"
     }
     signingConfigs {
         // A fixed key so every future APK installs over the old one and keeps her data.

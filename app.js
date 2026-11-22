@@ -13,7 +13,7 @@
    Keys live only on this device (localStorage), never hardcoded, never logged. */
 import { createWorld, ROOMS, SPOTS, ROOM_SPOTS } from "./world3d.js";
 
-const VERSION = "Aimmianna 3D v2.1";
+const VERSION = "Aimmianna 3D v2.1.1";
 const LS_KEY = "aimmianna_iphone_v1"; // same key as v1 so nothing is lost
 const ASSETS = "assets/";
 const BASE_FIGURE = ASSETS + "figure/aimmianna_human_fullbody.png";
@@ -76,6 +76,8 @@ function saveState() {
   saveTimer = setTimeout(saveNow, 120);
 }
 function saveNow() {
+  // the live wallpaper never overwrites newer changes made in the app: it reloads them instead
+  try { if (IS_WALLPAPER && window.__aimmiannaHome && window.__aimmiannaHome.changedElsewhere()) { location.reload(); return; } } catch (e) {}
   try {
     state.chat = state.chat.slice(-200);
     state.memories = state.memories.slice(-100);
@@ -3048,7 +3050,7 @@ $("lowPower").checked = !!state.lowPower;
 $("lowPower").addEventListener("change", (e) => { state.lowPower = e.target.checked; saveState(); world.setLowPower && world.setLowPower(state.lowPower); });
 
 /* ================= updates + backup ================= */
-const APP_BUILD = 210;              // bump on every release (version.json "build")
+const APP_BUILD = 211;              // bump on every release (version.json "build")
 const DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/Evilwayz80/Aimmianna-AI/main/version.json";
 function updateUrl() { return state.updateUrl || (IS_ANDROID_APP ? DEFAULT_UPDATE_URL : "version.json"); }
 async function checkUpdates(manual) {
@@ -3355,7 +3357,11 @@ async function init() {
 }
 window.__aimmiannaResume = () => {
   // the app and the live wallpaper share one saved Aimmianna; pick up the other's changes
-  if (window.__aimmiannaHome && window.__aimmiannaHome.changedElsewhere()) { location.reload(); return; }
+  let last = 0; try { last = Number(sessionStorage.getItem("aimmianna_resumeReload") || 0); } catch (e) {}
+  if (Date.now() - last > 20000 && window.__aimmiannaHome && window.__aimmiannaHome.changedElsewhere()) {
+    try { sessionStorage.setItem("aimmianna_resumeReload", String(Date.now())); } catch (e) {}
+    location.reload(); return;
+  }
   checkTimers(); refreshBadge(); renderPhone();
 };
 init();
@@ -3454,18 +3460,26 @@ const home = (() => {
     if (syncKey) { try { const e = parseEnv(await serverGet()); if (e) found.push(e); } catch (e) {} }
     found.sort((a, b) => b.at - a.at); return found[0] || null;
   }
-  function adopt(s) {
+  function adopt(s, at) {
+    // never loop: at most one automatic restore per 2 minutes
+    try { sessionStorage.setItem("aimmianna_adoptedAt", String(Date.now())); } catch (e) {}
+    try { localStorage.setItem("aimmianna_adoptedAt", String(Date.now())); } catch (e) {}
     state = Object.assign(freshState(), s); state.wardrobe = Object.assign(freshState().wardrobe, s.wardrobe || {});
     lsSet(JSON.stringify(state));
+    const t = Number(at) || Date.now(); lastAt = t; try { localStorage.setItem(AT_KEY, String(t)); } catch (e) {}
     toast("Her saved home is back — reloading."); setTimeout(() => location.reload(), 900);
   }
-  const isFresh = () => !state.chat.length && !state.memories.length && !(state.notes || "").trim() && !state.album.length;
+  const freshOf = (st) => !(st.chat || []).length && !(st.memories || []).length && !((st.notes || "") + "").trim() && !(st.album || []).length;
+  const isFresh = () => freshOf(state);
+  const recentlyAdopted = () => { let t = 0; try { t = Number(localStorage.getItem("aimmianna_adoptedAt") || 0); } catch (e) {} return Date.now() - t < 120000; };
   async function checkForNewer(manual) {
     const h = await readHome();
     if (!h) { if (manual) toast("No saved file found in her folder yet."); return; }
-    if (manual) { adopt(h.state); return; }
-    if (isFresh()) { adopt(h.state); return; }               // new install / new device: bring her home
-    if (h.at > lastAt + 60000) toast("A newer save of her is in her folder (" + fmt(h.at) + ").", { label: "Load it", fn: () => adopt(h.state) });
+    if (manual) { adopt(h.state, h.at); return; }
+    if (recentlyAdopted()) return;
+    // new install / new device: bring her home, but only if the file really holds her (not just this device's own fresh save)
+    if (isFresh()) { if (!freshOf(h.state) && h.at > lastAt) adopt(h.state, h.at); return; }
+    if (h.at > lastAt + 60000) toast("A newer save of her is in her folder (" + fmt(h.at) + ").", { label: "Load it", fn: () => adopt(h.state, h.at) });
   }
 
   /* ---- UI ---- */
@@ -3512,8 +3526,8 @@ const home = (() => {
           if (d.name.toLowerCase() !== "aimmianna") d = await d.getDirectoryHandle("Aimmianna", { create: true });
           dirHandle = d; fsReady = true; await idb("readwrite", (st) => st.put(d, "dir"));
           const existing = parseEnv(await fsRead());
-          if (existing && existing.at > lastAt && !isFresh()) toast("This folder already has her (" + fmt(existing.at) + ").", { label: "Load it", fn: () => adopt(existing.state) });
-          else if (existing && isFresh()) { adopt(existing.state); return; }
+          if (existing && existing.at > lastAt && !isFresh()) toast("This folder already has her (" + fmt(existing.at) + ").", { label: "Load it", fn: () => adopt(existing.state, existing.at) });
+          else if (existing && isFresh() && !freshOf(existing.state)) { adopt(existing.state, existing.at); return; }
         }
         refresh(); window.__homeQueue(JSON.stringify(state)); toast("Her home folder is set — she saves there automatically.");
       } catch (e) { if (e && e.name !== "AbortError") toast("Couldn't open that folder."); }
@@ -3534,7 +3548,7 @@ const home = (() => {
     syncKey = v; try { localStorage.setItem(SYNC_KEY, v); } catch (e) {}
     try {
       const h = parseEnv(await serverGet());
-      if (h && (isFresh() || h.at > lastAt)) { toast("Found her on the server (" + fmt(h.at) + ").", { label: "Load it", fn: () => adopt(h.state) }); }
+      if (h && (isFresh() || h.at > lastAt)) { toast("Found her on the server (" + fmt(h.at) + ").", { label: "Load it", fn: () => adopt(h.state, h.at) }); }
       else { pending = JSON.stringify(state); await flush(); }
       refresh(); setSync("Server sync: on" + (h ? " — server copy from " + fmt(h.at) : ""));
     } catch (e) { setSync("Server sync: couldn't reach her server (" + e.message + "). It needs server.py running."); }

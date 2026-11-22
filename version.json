@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
-  "build": 210,
-  "notes": "Spotify + YouTube, day-of-week styling, 10 new goth/grunge/alt/emo outfits, layered hair + makeup.",
+  "version": "2.1.1",
+  "build": 211,
+  "notes": "Fixes the Android app reloading over and over on a new install, and stops the live wallpaper from overwriting newer changes made in the app.",
   "apk": "https://github.com/Evilwayz80/Aimmianna-AI/releases/latest/download/Aimmianna.apk",
   "web": "https://github.com/Evilwayz80/Aimmianna-AI"
 }
