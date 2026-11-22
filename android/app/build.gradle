@@ -1,0 +1,32 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.aimmianna.app'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.aimmianna.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 210          // = APP_BUILD in app.js and "build" in version.json
+        versionName "2.1.0"
+    }
+    signingConfigs {
+        // A fixed key so every future APK installs over the old one and keeps her data.
+        // Back up aimmianna-release.jks — Android only accepts updates signed with the same key.
+        release {
+            storeFile file("../aimmianna-release.jks")
+            storePassword System.getenv("AIMMIANNA_KS_PASS") ?: "aimmianna"
+            keyAlias "aimmianna"
+            keyPassword System.getenv("AIMMIANNA_KS_PASS") ?: "aimmianna"
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+        debug { signingConfig signingConfigs.release }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+}
