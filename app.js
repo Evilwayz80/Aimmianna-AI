@@ -1252,34 +1252,32 @@ function sourcesOf(cand) {
   const out = [];
   chunks.forEach((ch) => { const w = ch.web; if (w && w.uri && !out.find((o) => o.uri === w.uri)) out.push({ uri: w.uri, title: w.title || w.domain || "source" }); });
   return out;
-}
-/* Returns {text, sources, actions} or null. */
-async function geminiAgent(key, onToolNote) {
-  const modes = state.geminiToolMode ? [state.geminiToolMode] : ["combined", "split", "plain"];
-  if (!state.toolsOn && !state.searchOn) modes.splice(0, modes.length, "plain");
-  for (let mi = 0; mi < modes.length; mi++) {
-    const mode = modes[mi];
-    const contents = buildAiHistory();
-    const sources = [];
-    let step = 0;
-    while (step < 6) {
-      step++;
-      const tools = toolsFor(mode);
-      const body = {
-        system_instruction: { parts: [{ text: buildSystemPrompt(tools.length ? mode : "plain") }] },
-        contents, generationConfig: { maxOutputTokens: 1024, temperature: 0.9 }
-      };
-      if (tools.length) body.tools = tools;
-      let r;
-      try {
-  r = await geminiRequest(key, body);
-} catch (e) {
-  window.alert(
-    "Gemini connection failed\n" +
-    String(e && e.message || e)
-  );
-  return null;
-}
+      if (!r.ok) {
+        const errorMessage =
+          r.data && r.data.error && r.data.error.message;
+
+        window.alert(
+          "Gemini request failed\n" +
+          "HTTP: " + r.status + "\n" +
+          (errorMessage || "No error details returned.")
+        );
+
+        return null;
+      }
+
+      const cand =
+        r.data &&
+        r.data.candidates &&
+        r.data.candidates[0];
+
+      if (!cand || !cand.content) {
+        window.alert(
+          "Gemini returned no message content.\n" +
+          JSON.stringify(r.data).slice(0, 1800)
+        );
+
+        return null;
+      }
       if (r.status === 400 && step === 1 && mi < modes.length - 1 && mode !== "plain") break; // this tool mode isn't supported — try the next
       if (r.status === 400 && step === 1 && state.geminiToolMode && mode !== "plain") { state.geminiToolMode = ""; saveState(); return geminiAgent(key, onToolNote); }
       if (!r.ok) return null;
