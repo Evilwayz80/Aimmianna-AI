@@ -1,4 +1,4 @@
-/* Aimmianna 3D v2.0 — her gothic apartment.
+6/* Aimmianna 3D v2.0 — her gothic apartment.
    One codebase for iPhone (Safari / Home Screen web app), desktop, and the
    Android APK (WebView app + live wallpaper).
 
@@ -1217,11 +1217,33 @@ function toolsFor(mode) {
   return [];
 }
 async function geminiCall(key, model, body) {
-  window.alert("Diagnostic version 2 is running."); fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
-    method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify(body)
-  });
-  let data = null; try { data = await res.json(); } catch (e) {}
-  return { status: res.status, ok: res.ok, data };
+  const res = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/" +
+      model +
+      ":generateContent",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": key
+      },
+      body: JSON.stringify(body)
+    }
+  );
+
+  let data = null;
+
+  try {
+    data = await res.json();
+  } catch (e) {
+    data = null;
+  }
+
+  return {
+    status: res.status,
+    ok: res.ok,
+    data: data
+  };
 }
 let workingModel = "";
 async function geminiRequest(key, body) {
