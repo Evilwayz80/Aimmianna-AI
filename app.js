@@ -1217,15 +1217,137 @@ function toolsFor(mode) {
   return [];
 }
 async function geminiAgent(key, onToolNote) {
-  return {
-    text:
-      "My live AI connection is temporarily paused " +
-      "while we repair it. This is a built-in message, " +
-      "not a Gemini reply.",
-    sources: []
-  };
-}
+  function diagnostic(message) {
+    return {
+      text: "Connection diagnostic: " + message,
+      sources: []
+    };
+  }
 
+  try {
+    if (!key || !String(key).trim()) {
+      return diagnostic("No Gemini API key is saved.");
+    }
+
+    if (
+      typeof GEMINI_MODELS === "undefined" ||
+      !Array.isArray(GEMINI_MODELS) ||
+      !GEMINI_MODELS.length
+    ) {
+      return diagnostic("The Gemini model list is missing.");
+    }
+
+    const contents = buildAiHistory();
+
+    while (
+      contents.length &&
+      contents[0].role !== "user"
+    ) {
+      contents.shift();
+    }
+
+    if (
+      !contents.length ||
+      contents[contents.length - 1].role !== "user"
+    ) {
+      return diagnostic(
+        "The current user message is missing from chat history."
+      );
+    }
+
+    const body = {
+      systemInstruction: {
+        parts: [{ text: buildSystemPrompt("plain") }]
+      },
+      contents: contents,
+      generationConfig: {
+        maxOutputTokens: 2048,
+        temperature: 0.7
+      }
+    };
+
+    let lastError = "No model was tried.";
+
+    for (const model of GEMINI_MODELS) {
+      const modelId = String(model).replace(/^models\//, "");
+
+      const res = await fetch(
+        "https://generativelanguage.googleapis.com/" +
+        "v1beta/models/" +
+        encodeURIComponent(modelId) +
+        ":generateContent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": String(key).trim()
+          },
+          body: JSON.stringify(body)
+        }
+      );
+
+      let data = null;
+
+      try {
+        data = await res.json();
+      } catch (e) {
+        return diagnostic(
+          "HTTP " + res.status +
+          ": The server response was not readable JSON."
+        );
+      }
+
+      if (!res.ok) {
+        const message =
+          data && data.error && data.error.message;
+
+        lastError =
+          "Model " + modelId +
+          ", HTTP " + res.status + ": " +
+          String(message || "No error details returned.")
+            .slice(0, 1000);
+
+        if (res.status === 404) continue;
+
+        return diagnostic(lastError);
+      }
+
+      const cand =
+        data && data.candidates && data.candidates[0];
+
+      const parts =
+        cand && cand.content && cand.content.parts;
+
+      const text = (parts || [])
+        .filter((p) => p.text && !p.thought)
+        .map((p) => p.text)
+        .join(" ")
+        .trim();
+
+      if (!text) {
+        return diagnostic(
+          "Google returned no reply text. Finish reason: " +
+          ((cand && cand.finishReason) || "not provided") +
+          ". Prompt feedback: " +
+          JSON.stringify(
+            (data && data.promptFeedback) || {}
+          )
+        );
+      }
+
+      return {
+        text: cleanReply(text),
+        sources: []
+      };
+    }
+
+    return diagnostic(lastError);
+  } catch (e) {
+    return diagnostic(
+      String(e && e.message || e).slice(0, 1000)
+    );
+  }
+}
 
 function cleanReply(t) {
   return t.replace(/\*\*?|__|`/g, "").replace(/\[(\d+(,\s*\d+)*)\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/\s{2,}/g, " ").trim();
