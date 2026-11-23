@@ -1217,7 +1217,7 @@ function toolsFor(mode) {
   return [];
 }
 async function geminiCall(key, model, body) {
-  window.alert("Diagnostic code is running."); const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+  window.alert("Diagnostic version 2 is running."); fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
     method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify(body)
   });
   let data = null; try { data = await res.json(); } catch (e) {}
