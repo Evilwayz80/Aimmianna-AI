@@ -1,4 +1,4 @@
-%60e36/* Aimmianna 3D v2.0 — her gothic apartment.
+60e3%60e36/* Aimmianna 3D v2.0 — her gothic apartment.
    One codebase for iPhone (Safari / Home Screen web app), desktop, and the
    Android APK (WebView app + live wallpaper).
 
@@ -1217,95 +1217,15 @@ function toolsFor(mode) {
   return [];
 }
 async function geminiAgent(key, onToolNote) {
-  function diagnostic(message) {
-    return {
-      text: "Connection diagnostic — " + message,
-      sources: []
-    };
-  }
-
-  try {
-    if (!key || !String(key).trim()) {
-      return diagnostic("No Gemini API key is saved.");
-    }
-
-    const contents = buildAiHistory();
-
-    while (
-      contents.length &&
-      contents[0].role !== "user"
-    ) {
-      contents.shift();
-    }
-
-    if (
-      !contents.length ||
-      contents[contents.length - 1].role !== "user"
-    ) {
-      return diagnostic(
-        "The current user message is missing from chat history."
-      );
-    }
-
-    const r = await geminiRequest(String(key).trim(), {
-      systemInstruction: {
-        parts: [{ text: buildSystemPrompt("plain") }]
-      },
-      contents: contents,
-      generationConfig: {
-        maxOutputTokens: 2048,
-        temperature: 0.7
-      }
-    });
-
-    if (!r.ok) {
-      const errorMessage =
-        r.data &&
-        r.data.error &&
-        r.data.error.message;
-
-      return diagnostic(
-        "HTTP " + r.status + ": " +
-        String(errorMessage || "No error details returned.")
-          .slice(0, 1000)
-      );
-    }
-
-    const cand =
-      r.data &&
-      r.data.candidates &&
-      r.data.candidates[0];
-
-    const parts =
-      cand && cand.content && cand.content.parts;
-
-    const text = (parts || [])
-      .filter((p) => p.text && !p.thought)
-      .map((p) => p.text)
-      .join(" ")
-      .trim();
-
-    if (!text) {
-      return diagnostic(
-        "Google returned no reply text. Finish reason: " +
-        ((cand && cand.finishReason) || "not provided") +
-        ". Prompt feedback: " +
-        JSON.stringify(
-          (r.data && r.data.promptFeedback) || {}
-        )
-      );
-    }
-
-    return {
-      text: cleanReply(text),
-      sources: sourcesOf(cand)
-    };
-  } catch (e) {
-    return diagnostic(
-      String(e && e.message || e).slice(0, 1000)
-    );
-  }
+  return {
+    text:
+      "My live AI connection is temporarily paused " +
+      "while we repair it. This is a built-in message, " +
+      "not a Gemini reply.",
+    sources: []
+  };
 }
+
 
 function cleanReply(t) {
   return t.replace(/\*\*?|__|`/g, "").replace(/\[(\d+(,\s*\d+)*)\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/\s{2,}/g, " ").trim();
