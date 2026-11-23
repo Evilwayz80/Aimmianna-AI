@@ -1,4 +1,4 @@
-60e36/* Aimmianna 3D v2.0 — her gothic apartment.
+%60e36/* Aimmianna 3D v2.0 — her gothic apartment.
    One codebase for iPhone (Safari / Home Screen web app), desktop, and the
    Android APK (WebView app + live wallpaper).
 
@@ -1216,96 +1216,95 @@ function toolsFor(mode) {
   }
   return [];
 }
-async function geminiCall(key, model, body) {
-  const res = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/" +
-      model +
-      ":generateContent",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": key
-      },
-      body: JSON.stringify(body)
-    }
-  );
-
-  let data = null;
+async function geminiAgent(key, onToolNote) {
+  function diagnostic(message) {
+    return {
+      text: "Connection diagnostic — " + message,
+      sources: []
+    };
+  }
 
   try {
-    data = await res.json();
-  } catch (e) {
-    data = null;
-  }
+    if (!key || !String(key).trim()) {
+      return diagnostic("No Gemini API key is saved.");
+    }
 
-  return {
-    status: res.status,
-    ok: res.ok,
-    data: data
-  };
-}
-let workingModel = "";
-async function geminiRequest(key, body) {
-  const models = workingModel ? [workingModel].concat(GEMINI_MODELS.filter((m) => m !== workingModel)) : GEMINI_MODELS;
-  let last = null;
-  for (const model of models) {
-    const r = await geminiCall(key, model, body);
-    if (r.status === 404) { last = r; continue; }
-    if (r.ok) workingModel = model;
-    return r;
-  }
-  return last || { status: 0, ok: false, data: null };
-}
-async function groundedSearch(key, query) {
-  const r = await geminiRequest(key, {
-    contents: [{ role: "user", parts: [{ text: "Answer briefly with current facts: " + query }] }],
-    tools: [{ google_search: {} }], generationConfig: { maxOutputTokens: 700, temperature: 0.3 }
-  });
-  if (!r.ok) return { ok: false, error: "search unavailable (HTTP " + r.status + ")" };
-  const c = r.data && r.data.candidates && r.data.candidates[0];
-  const text = c && c.content && (c.content.parts || []).filter((p) => p.text && !p.thought).map((p) => p.text).join(" ");
-  return { ok: true, answer: (text || "").slice(0, 1600), sources: sourcesOf(c) };
-}
-function sourcesOf(cand) {
-  const gm =
-    cand &&
-    (cand.groundingMetadata || cand.grounding_metadata);
+    const contents = buildAiHistory();
 
-  const chunks =
-    gm &&
-    (gm.groundingChunks || gm.grounding_chunks);
-
-  if (!chunks) return [];
-
-  const out = [];
-
-  chunks.forEach((ch) => {
-    const w = ch.web;
+    while (
+      contents.length &&
+      contents[0].role !== "user"
+    ) {
+      contents.shift();
+    }
 
     if (
-      w &&
-      w.uri &&
-      !out.find((o) => o.uri === w.uri)
+      !contents.length ||
+      contents[contents.length - 1].role !== "user"
     ) {
-      out.push({
-        uri: w.uri,
-        title: w.title || w.domain || "source"
-      });
+      return diagnostic(
+        "The current user message is missing from chat history."
+      );
     }
-  });
 
-  return out;
-}
+    const r = await geminiRequest(String(key).trim(), {
+      systemInstruction: {
+        parts: [{ text: buildSystemPrompt("plain") }]
+      },
+      contents: contents,
+      generationConfig: {
+        maxOutputTokens: 2048,
+        temperature: 0.7
+      }
+    });
 
-async function geminiAgent(key, onToolNote) {
-  return {
-    text:
-      "My live AI connection is temporarily paused " +
-      "while we repair it. This is a built-in message, " +
-      "not a Gemini reply.",
-    sources: []
-  };
+    if (!r.ok) {
+      const errorMessage =
+        r.data &&
+        r.data.error &&
+        r.data.error.message;
+
+      return diagnostic(
+        "HTTP " + r.status + ": " +
+        String(errorMessage || "No error details returned.")
+          .slice(0, 1000)
+      );
+    }
+
+    const cand =
+      r.data &&
+      r.data.candidates &&
+      r.data.candidates[0];
+
+    const parts =
+      cand && cand.content && cand.content.parts;
+
+    const text = (parts || [])
+      .filter((p) => p.text && !p.thought)
+      .map((p) => p.text)
+      .join(" ")
+      .trim();
+
+    if (!text) {
+      return diagnostic(
+        "Google returned no reply text. Finish reason: " +
+        ((cand && cand.finishReason) || "not provided") +
+        ". Prompt feedback: " +
+        JSON.stringify(
+          (r.data && r.data.promptFeedback) || {}
+        )
+      );
+    }
+
+    return {
+      text: cleanReply(text),
+      sources: sourcesOf(cand)
+    };
+  } catch (e) {
+    return diagnostic(
+      String(e && e.message || e).slice(0, 1000)
+    );
+  }
 }
 
 function cleanReply(t) {
