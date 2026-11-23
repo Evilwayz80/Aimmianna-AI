@@ -1271,7 +1271,15 @@ async function geminiAgent(key, onToolNote) {
       };
       if (tools.length) body.tools = tools;
       let r;
-      try { r = await geminiRequest(key, body); } catch (e) { return null; }
+      try {
+  r = await geminiRequest(key, body);
+} catch (e) {
+  window.alert(
+    "Gemini connection failed\n" +
+    String(e && e.message || e)
+  );
+  return null;
+}
       if (r.status === 400 && step === 1 && mi < modes.length - 1 && mode !== "plain") break; // this tool mode isn't supported — try the next
       if (r.status === 400 && step === 1 && state.geminiToolMode && mode !== "plain") { state.geminiToolMode = ""; saveState(); return geminiAgent(key, onToolNote); }
       if (!r.ok) return null;
