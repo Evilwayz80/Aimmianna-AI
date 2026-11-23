@@ -1,4 +1,4 @@
-6/* Aimmianna 3D v2.0 — her gothic apartment.
+60e36/* Aimmianna 3D v2.0 — her gothic apartment.
    One codebase for iPhone (Safari / Home Screen web app), desktop, and the
    Android APK (WebView app + live wallpaper).
 
@@ -1268,79 +1268,46 @@ async function groundedSearch(key, query) {
   return { ok: true, answer: (text || "").slice(0, 1600), sources: sourcesOf(c) };
 }
 function sourcesOf(cand) {
-  const gm = cand && (cand.groundingMetadata || cand.grounding_metadata);
-  const chunks = gm && (gm.groundingChunks || gm.grounding_chunks);
+  const gm =
+    cand &&
+    (cand.groundingMetadata || cand.grounding_metadata);
+
+  const chunks =
+    gm &&
+    (gm.groundingChunks || gm.grounding_chunks);
+
   if (!chunks) return [];
+
   const out = [];
-  chunks.forEach((ch) => { const w = ch.web; if (w && w.uri && !out.find((o) => o.uri === w.uri)) out.push({ uri: w.uri, title: w.title || w.domain || "source" }); });
-  return out;
-      if (!r.ok) {
-        const errorMessage =
-          r.data && r.data.error && r.data.error.message;
 
-        window.alert(
-          "Gemini request failed\n" +
-          "HTTP: " + r.status + "\n" +
-          (errorMessage || "No error details returned.")
-        );
+  chunks.forEach((ch) => {
+    const w = ch.web;
 
-        return null;
-      }
-
-      const cand =
-        r.data &&
-        r.data.candidates &&
-        r.data.candidates[0];
-
-      if (!cand || !cand.content) {
-        window.alert(
-          "Gemini returned no message content.\n" +
-          JSON.stringify(r.data).slice(0, 1800)
-        );
-
-        return null;
-      }
-      if (r.status === 400 && step === 1 && mi < modes.length - 1 && mode !== "plain") break; // this tool mode isn't supported — try the next
-      if (r.status === 400 && step === 1 && state.geminiToolMode && mode !== "plain") { state.geminiToolMode = ""; saveState(); return geminiAgent(key, onToolNote); }
-      if (!r.ok) return null;
-      const cand = r.data && r.data.candidates && r.data.candidates[0];
-      if (!cand || !cand.content) return null;
-      sourcesOf(cand).forEach((s) => { if (!sources.find((o) => o.uri === s.uri)) sources.push(s); });
-      const parts = cand.content.parts || [];
-      const calls = parts.filter((p) => p.functionCall);
-      if (step === 1 && mode !== state.geminiToolMode) { state.geminiToolMode = mode; saveState(); }
-      if (!calls.length) {
-        const text = parts.filter((p) => p.text && !p.thought).map((p) => p.text).join(" ").trim();
-        if (!text) return step > 1 ? { text: pickOne(["Done, bestie.", "There you go, Tony.", "Okay — handled."]), sources } : null;
-        if (sources.length) gainXP("researcher", 4);
-        return { text: cleanReply(text), sources };
-      }
-      contents.push({ role: "model", parts }); // verbatim, keeps thought signatures
-      const responses = [];
-      for (const p of calls) {
-        const fc = p.functionCall;
-        let result;
-        try {
-          if (fc.name === "searchWeb") {
-            onToolNote && onToolNote("searching the web…");
-            result = await groundedSearch(key, (fc.args && fc.args.query) || "");
-            (result.sources || []).forEach((s) => { if (!sources.find((o) => o.uri === s.uri)) sources.push(s); });
-            delete result.sources;
-          } else {
-            result = await runTool(fc.name, fc.args || {});
-            if (result && result.note) onToolNote && onToolNote(result.note);
-          }
-        } catch (e) { result = { ok: false, error: String(e && e.message || e) }; }
-        const fr = { name: fc.name, response: { result } };
-        if (fc.id) fr.id = fc.id;
-        responses.push({ functionResponse: fr });
-      }
-      contents.push({ role: "user", parts: responses });
+    if (
+      w &&
+      w.uri &&
+      !out.find((o) => o.uri === w.uri)
+    ) {
+      out.push({
+        uri: w.uri,
+        title: w.title || w.domain || "source"
+      });
     }
-    if (step >= 6) return { text: "Okay, done.", sources: [] };
-  }
-  return null;
+  });
+
+  return out;
 }
+
+async function geminiAgent(key, onToolNote) {
+  return {
+    text:
+      "My live AI connection is temporarily paused " +
+      "while we repair it. This is a built-in message, " +
+      "not a Gemini reply.",
+    sources: []
+  };
+}
+
 function cleanReply(t) {
   return t.replace(/\*\*?|__|`/g, "").replace(/\[(\d+(,\s*\d+)*)\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/\s{2,}/g, " ").trim();
 }
