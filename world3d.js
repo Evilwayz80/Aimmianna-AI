@@ -934,13 +934,18 @@ export function createWorld(opts) {
   const wandTip = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat.gold);
   wandTip.position.set(17.72, 0.88, -3.12); scene.add(wandTip);
   wandTip.userData.tap = "wand"; tappables.push(wandTip);
-  // Ingredient bowls — herbs from the yard live here.
-  const bowlCols = [0x4a7a3a, 0x9a5adf, 0xd9a03a];
+  // Ingredient bowls — one per herb; the fill level IS the herb stock the
+  // garden grew, and casting spends it. Driven by ritualFx({herbs}).
+  const bowlCols = [0x4a7a3a, 0x9a5adf, 0xd9a03a, 0x3aa06a]; // sage, lavender, rosemary, mint
+  const bowlFills = [];
   bowlCols.forEach((col, i) => {
-    const b = cyl(0.09, 0.07, 0.06, mat.steel, 18.15 + i * 0.25, 0.89, -3.52, 10);
+    const bx = 18.05 + i * 0.23;
+    const b = cyl(0.09, 0.07, 0.06, mat.steel, bx, 0.89, -3.52, 10);
     b.userData.tap = "bowls"; tappables.push(b);
-    const fill = cyl(0.075, 0.075, 0.02, new THREE.MeshLambertMaterial({ color: col }), 18.15 + i * 0.25, 0.92, -3.52, 10);
+    const fill = cyl(0.075, 0.075, 0.02, new THREE.MeshLambertMaterial({ color: col }), bx, 0.92, -3.52, 10);
     fill.userData.tap = "bowls"; tappables.push(fill);
+    fill.visible = false; fill.scale.y = 0.15;
+    bowlFills.push(fill);
   });
   // Scrying board leaning on the back wall — letters, YES / NO / GOODBYE.
   const scryTex = canvasTex(256, 192, (g, w, h) => {
@@ -977,7 +982,43 @@ export function createWorld(opts) {
   rMirrorGlass.scale.set(0.85, 1.12, 1); rMirrorGlass.position.set(19.6, 1.7, -3.93); scene.add(rMirrorGlass);
   rMirrorGlass.userData.tap = "ritual_mirror"; tappables.push(rMirrorGlass);
   glowSprite(0xa040ff, 1.4, 19.6, 1.7, -3.8, null, 0.2);
+  // Goth corner (2.4.8): a bat on the wall, velvet drapes, and a skull with
+  // black roses on a wrought-iron stand. The skull talks back when tapped.
+  const batG = new THREE.Group(); batG.position.set(19.6, 2.8, -3.9); scene.add(batG);
+  const batBody = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mat.black);
+  batBody.scale.set(1, 0.7, 0.5); batG.add(batBody);
+  for (const s of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.015, 0.16), mat.black);
+    wing.position.set(s * 0.2, 0.02, 0); wing.rotation.z = s * 0.45; batG.add(wing);
+  }
+  for (const dx of [-0.62, 0.62]) {
+    const drape = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 2.3), new THREE.MeshLambertMaterial({ color: 0x4a0f1e }));
+    drape.position.set(17.75 + dx * 3.85, 1.15, -3.93); scene.add(drape);
+  }
+  const skullG = new THREE.Group(); skullG.position.set(15.6, 0, -2.4); scene.add(skullG);
+  const pedestal = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.9, 0.5), mat.black);
+  pedestal.position.y = 0.45; skullG.add(pedestal);
+  const skullHead = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), mat.skull);
+  skullHead.position.set(-0.1, 1.02, 0); skullHead.scale.set(1, 0.95, 0.95); skullG.add(skullHead);
+  const skullJaw = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.05, 0.09), mat.skull);
+  skullJaw.position.set(-0.1, 0.93, 0.05); skullG.add(skullJaw);
+  for (const ex of [-0.045, 0.045]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 6), mat.black);
+    eye.position.set(-0.1 + ex, 1.04, 0.1); skullG.add(eye);
+  }
+  const roseVase = cyl(0.05, 0.04, 0.18, mat.black, 0, 0, 0, 8, skullG);
+  roseVase.position.set(0.13, 0.99, 0);
+  for (let i = 0; i < 3; i++) {
+    const stem = cyl(0.008, 0.008, 0.22, new THREE.MeshLambertMaterial({ color: 0x1e3a1e }), 0, 0, 0, 5, skullG);
+    stem.position.set(0.13 + (i - 1) * 0.03, 1.18, (i - 1) * 0.02);
+    stem.rotation.z = (i - 1) * 0.25;
+    const rose = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshLambertMaterial({ color: 0x2a060d }));
+    rose.position.set(0.13 + (i - 1) * 0.08, 1.3, (i - 1) * 0.02); skullG.add(rose);
+  }
+  tagged(skullG, "ritual_skull");
   // Candle + incense visuals, driven by ritualFx() from the app.
+  let candleBoost = 0; // warm light added to the room lamp, per lit candle
+  let castFlareUntil = 0; // performance.now() until which a cast flare burns
   function applyRitualFx() {
     candleState.forEach((c, i) => {
       const m = candleMeshes[i]; if (!m) return;
@@ -989,6 +1030,8 @@ export function createWorld(opts) {
       m.flame.position.y = 0.86 + 0.28 * s + 0.06;
       m.glow.position.y = 0.86 + 0.28 * s + 0.06;
     });
+    candleBoost = candleState.filter((c) => c.lit).length * 2.2;
+    applyLamp("ritual");
   }
   applyRitualFx();
   // Weather + time of day over the yard (2.4.7): the sky changes with the
@@ -1003,8 +1046,21 @@ export function createWorld(opts) {
   const sunSpr = glowSprite(0xffd27a, 3.4, 7, 5.6, 9.5, null, 0.5);
   const moonSpr = glowSprite(0xdfe6ff, 2.4, 7, 5.2, 9.5, null, 0.45);
   function applySky() {
-    const h = new Date().getHours();
-    const day = h >= 7 && h < 17, dusk = h >= 17 && h < 19;
+    const h = new Date().getHours() + new Date().getMinutes() / 60;
+    // Fixed bands by default; with a latitude (Permissions → Location →
+    // "Use my location"), day and dusk follow his real sunrise/sunset.
+    let day, dusk;
+    const lat = weatherState.lat;
+    if (lat && Math.abs(lat) <= 90) {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), 0, 0);
+      const n = Math.floor((now - start) / 864e5);
+      const decl = -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (n + 10));
+      const cosH = Math.max(-1, Math.min(1, -Math.tan(lat * Math.PI / 180) * Math.tan(decl)));
+      const dayLen = 2 * Math.acos(cosH) * 180 / Math.PI / 15;
+      const rise = 12 - dayLen / 2, set = 12 + dayLen / 2;
+      day = h >= rise && h < set - 1; dusk = h >= set - 1 && h < set + 1;
+    } else { day = h >= 7 && h < 17; dusk = h >= 17 && h < 19; }
     const mode = weatherState.mode;
     if (mode === "rain") { hemi.intensity = 0.85; renderer.setClearColor(0x11141c, 1); scene.fog.color.set(0x11141c); }
     else if (mode === "cloudy") { hemi.intensity = 1.0; renderer.setClearColor(0x171a24, 1); scene.fog.color.set(0x171a24); }
@@ -1405,8 +1461,11 @@ export function createWorld(opts) {
   function applyLamp(id) {
     const r = roomLights[id], mode = LAMP_MODES[r.mode];
     const c = new THREE.Color(mode.color);
-    r.light.color.set(mode.i ? mode.color : 0xffffff);
-    r.light.intensity = mode.i ? r.base : 0;
+    // Candles are real light: each lit candle warms the ritual room, and
+    // with the lamp off they light it on their own (2.4.8).
+    const boost = id === "ritual" ? candleBoost : 0;
+    r.light.color.set(mode.i ? mode.color : (boost > 0 ? 0xffb13a : 0xffffff));
+    r.light.intensity = (mode.i ? r.base : 0) + boost;
     r.shades.forEach((s) => { s.material.color.copy(mode.i ? c : new THREE.Color(0x221a26)); });
     r.glows.forEach((g) => { g.material.color.copy(c); g.material.opacity = mode.i ? 0.55 : 0; });
   }
@@ -1659,13 +1718,13 @@ export function createWorld(opts) {
         // only count her if the hit pixel is actually opaque-ish (crude: middle 70% of the card)
         const u = h.uv; if (u && (u.x < 0.18 || u.x > 0.82)) continue;
       }
-      return { tap, point: h.point };
+      return { tap, point: h.point, index: (h.object.userData.candleIndex != null ? h.object.userData.candleIndex : (h.object.userData.crystalIndex != null ? h.object.userData.crystalIndex : null)) };
     }
     return null;
   }
   function pick(cx, cy) {
     const hit = hitAt(cx, cy);
-    if (hit) onTap(hit.tap, { point: hit.point, x: cx, y: cy });
+    if (hit) onTap(hit.tap, { point: hit.point, x: cx, y: cy, index: hit.index });
   }
 
   /* ------------ anchors (speech bubble, idle fx) follow her head */
@@ -1766,9 +1825,15 @@ export function createWorld(opts) {
     // bamboo sways, hammock rocks gently
     bambooStalks.forEach((b) => { b.mesh.rotation.z = b.base + Math.sin(t * 0.9 + b.phase) * 0.035; });
     hammockGroup.rotation.z = Math.sin(t * 0.7) * 0.025;
-    // incense smoke rises while lit; candle flames flicker
+    // incense smoke rises while lit; candle flames flicker — and flare bright
+    // for a few seconds after a spell is cast (2.4.8)
     animateSteam(incenseSteam, incenseOn, t, 0.7, 0.4);
-    candleMeshes.forEach((m, i) => { if (candleState[i].lit) m.flame.scale.setScalar(0.9 + Math.sin(t * 11 + i * 2) * 0.15); });
+    const flaring = performance.now() < castFlareUntil;
+    candleMeshes.forEach((m, i) => {
+      m.glow.material.opacity = candleState[i].lit ? (flaring ? 0.9 : 0.5) : 0;
+      if (candleState[i].lit) m.flame.scale.setScalar(flaring ? 1.5 + Math.sin(t * 14 + i) * 0.25 : 0.9 + Math.sin(t * 11 + i * 2) * 0.15);
+    });
+    ballGlow.material.opacity = flaring ? 0.6 + Math.sin(t * 6) * 0.3 : 0.3;
     // rain falls over the yard
     if (rainPts.visible) {
       const rp = rainPts.geometry.attributes.position;
@@ -1956,16 +2021,22 @@ export function createWorld(opts) {
       badgeTex.needsUpdate = true;
     },
     // Ritual room FX (2.4.7): fx = { candles: [{lit, burn}...], incense: bool }
+    // 2.4.8 adds: herbs {sage, lavender, rosemary, mint} (bowl fill levels)
+    // and flare (ms — candle flare + crystal ball glow after a cast).
     ritualFx(fx) {
       if (!fx) return { candles: candleState.map((c) => ({ ...c })), incense: incenseOn };
       if (Array.isArray(fx.candles)) fx.candles.forEach((c, i) => { if (!candleState[i]) return; if (c.lit != null) candleState[i].lit = !!c.lit; if (c.burn != null) candleState[i].burn = Math.max(0, Math.min(100, c.burn)); });
       if (fx.incense != null) incenseOn = !!fx.incense;
+      if (fx.herbs) { const order = ["sage", "lavender", "rosemary", "mint"]; order.forEach((h, i) => { const f = bowlFills[i]; if (!f) return; const n = Math.max(0, Math.min(9, fx.herbs[h] || 0)); f.visible = n > 0; f.scale.y = 0.15 + 0.85 * (n / 9); }); }
+      if (fx.flare) castFlareUntil = performance.now() + fx.flare;
       applyRitualFx();
       return { candles: candleState.map((c) => ({ ...c })), incense: incenseOn };
     },
     // Yard weather (2.4.7): "auto" (time of day), "clear", "cloudy", "rain"
     setWeather(mode) { if (["auto", "clear", "cloudy", "rain"].indexOf(mode) === -1) mode = "auto"; weatherState.mode = mode; applySky(); return weatherState.mode; },
     getWeather: () => weatherState.mode,
+    setLatitude(lat) { weatherState.lat = lat; applySky(); return weatherState.lat; },
+    getLatitude: () => weatherState.lat || 0,
     resize
   };
 }

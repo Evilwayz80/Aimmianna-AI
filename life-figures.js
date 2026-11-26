@@ -1,4 +1,4 @@
-import { OUTFITS, MARKET_COLORS } from "./life-rules.js";
+import { OUTFITS, MARKET_COLORS, TONY_HOODIES } from "./life-rules.js";
 
 // Tony's own Tripo avatar — his character in the Life Lab. It loads in the
 // background; the built-in figure shows until it arrives (and if it fails).
@@ -66,6 +66,52 @@ export function makeLifeFigures(T) {
   }
   const shadow = new T.Mesh(new T.CircleGeometry(.307, 24), new T.MeshBasicMaterial({ color: 0x07050b, opacity: .32, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }));
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = .014; shadow.scale.y = .74; player.add(shadow);
+
+  // ---- Tony's wardrobe accessories (2.4.8): a silver chain and a gothic
+  // cross necklace, hung on his figure at chest height. They live in one
+  // group that rides with whichever figure is showing (the Tripo model
+  // once it loads, the built-in figure before that).
+  const tonyProps = new T.Group(); tonyProps.name = "TonyAccessories";
+  figure.add(tonyProps);
+  const chainProp = new T.Group(); chainProp.name = "TonyChain";
+  const crossProp = new T.Group(); crossProp.name = "TonyCross";
+  tonyProps.add(chainProp, crossProp);
+  {
+    const silver = mat(0xc8c8d0);
+    const linkGeo = new T.TorusGeometry(0.02, 0.005, 6, 12);
+    for (let i = 0; i < 9; i++) {
+      const t = i / 8, link = new T.Mesh(linkGeo, silver);
+      link.position.set((t - 0.5) * 0.24, 1.36 - Math.sin(t * Math.PI) * 0.06, 0.13);
+      link.rotation.z = (i % 2) * Math.PI / 2;
+      chainProp.add(link);
+    }
+    const darkMetal = mat(0x30303a);
+    const cord = mat(0x141014);
+    for (let i = 0; i < 7; i++) {
+      const t = i / 6, bead = new T.Mesh(new T.SphereGeometry(0.008, 8, 6), cord);
+      bead.position.set((t - 0.5) * 0.12, 1.40 - t * 0.20, 0.135);
+      crossProp.add(bead);
+    }
+    const crossV = new T.Mesh(new T.BoxGeometry(0.022, 0.055, 0.01), darkMetal);
+    crossV.position.set(0, 1.16, 0.145); crossProp.add(crossV);
+    const crossH = new T.Mesh(new T.BoxGeometry(0.038, 0.012, 0.01), darkMetal);
+    crossH.position.set(0, 1.172, 0.145); crossProp.add(crossH);
+    const gem = new T.Mesh(new T.OctahedronGeometry(0.008), new T.MeshBasicMaterial({ color: 0x9a6bff }));
+    gem.position.set(0, 1.16, 0.152); crossProp.add(gem);
+  }
+  // Tony's Tripo model is one mesh with one texture: a hoodie colour is a
+  // tint over the whole figure, and the chain/cross are the real swaps.
+  let playerMats = [];
+  let currentTonyStyle = { hoodie: "black", chain: "none" };
+  function applyTonyStyle(style) {
+    const s = style || currentTonyStyle;
+    currentTonyStyle = { hoodie: s.hoodie || "black", chain: s.chain || "none" };
+    const h = TONY_HOODIES.find((x) => x.id === currentTonyStyle.hoodie) || TONY_HOODIES[0];
+    playerMats.forEach((m) => { m.color.setHex(h.tint); if (m.emissive) m.emissiveIntensity = h.id === "black" ? 0.52 : 0.38; });
+    jacket.color.setHex(h.solid);
+    chainProp.visible = currentTonyStyle.chain === "chain" || currentTonyStyle.chain === "both";
+    crossProp.visible = currentTonyStyle.chain === "cross" || currentTonyStyle.chain === "both";
+  }
 
   const decorations = new Map();
   const metal = mat(0x272334), gold = mat(0xa97a45), purple = mat(0x7560ba), amber = new T.MeshBasicMaterial({ color: 0xffbd72 });
@@ -227,6 +273,7 @@ export function makeLifeFigures(T) {
         if (!mesh.isMesh) return;
         const material = mesh.material;
         if (material) {
+          if (playerMats.indexOf(material) === -1) playerMats.push(material);
           // Same treatment as Aimmianna's model: keeps the textured figure
           // legible in the gothic room.
           material.metalness = 0;
@@ -246,8 +293,10 @@ export function makeLifeFigures(T) {
       modelGroup.name = "Tony3D";
       modelGroup.add(scene);
       player.add(modelGroup);
+      modelGroup.add(tonyProps); // his chain + cross ride with the real model
       figure.visible = false;
       modelReady = true;
+      applyTonyStyle(currentTonyStyle);
       playMotion("idle", 0.5);
       mixer.update(0);
     } catch (error) {
@@ -258,13 +307,14 @@ export function makeLifeFigures(T) {
 
   return {
     root, player, yardTaps,
-    playEmote,
+    playEmote, applyTonyStyle,
     modelReady: () => modelReady,
     look(state) {
       const outfit = OUTFITS[state.outfit];
       skin.color.setHex(SKIN[state.player.skin]);
       hair.color.setHex(HAIR[state.player.hair]);
       jacket.color.setHex(outfit.color); pants.color.setHex(outfit.pants);
+      applyTonyStyle(state.tonyStyle); // his hoodie colour wins over the game jacket
       seam.visible = outfit.cut === 1; panel.visible = outfit.cut === 2;
       hairstyles.forEach((g, i) => { g.visible = i === state.player.style; });
       decorations.forEach((g, id) => { g.visible = state.upgrades.includes(id); });

@@ -158,15 +158,48 @@
     </div>
     <p id="yardStatus" class="status-line">The yard is quiet right now.</p>
     <p id="yardHerbs" class="status-line"></p>
+    <div class="btn-row">
+      <button type="button" id="yardLocBtn" class="wide-btn">Use my location for yard daylight</button>
+    </div>
+    <p class="help">With your location on, the yard light follows your real sunrise and sunset instead of fixed hours. It only uses your position for the sky — nothing is sent anywhere.</p>
   </section>
   <section id="chatSection" aria-label="Talk to Aimmianna">
+    <div class="chat-tools">
+      <button type="button" id="chatMenuBtn" aria-expanded="false" aria-controls="chatMenu">⋯ Chat options</button>
+      <button type="button" id="stopSpeakBtn" hidden>⏹ Stop talking</button>
+    </div>
+    <div id="chatMenu" class="chat-menu" hidden>
+      <button type="button" id="chatClearBtn" aria-pressed="false">👁 See-through: off</button>
+      <button type="button" id="menuVoiceBtn">🔊 Her voice replies: on</button>
+      <label class="chat-menu-row"><span>Voice speed</span>
+        <select id="voiceRateSel" aria-label="Voice speed">
+          <option value="0.8">Slower</option>
+          <option value="1" selected>Normal</option>
+          <option value="1.2">Quicker</option>
+        </select>
+      </label>
+      <button type="button" id="savedOpenBtn">☆ Saved messages &amp; pictures</button>
+      <div class="chat-menu-row">
+        <input type="text" id="quickAddInput" placeholder="Add your own quick reply…" maxlength="40" aria-label="Add your own quick reply">
+        <button type="button" id="quickAddBtn">Add</button>
+      </div>
+      <p class="help">Tip: press and hold any message to save it. Saved things live under ☆ Saved.</p>
+    </div>
+    <div id="savedPanel" class="chat-menu" hidden>
+      <div class="saved-head"><b>☆ Saved</b><button type="button" id="savedCloseBtn">Close</button></div>
+      <div class="btn-row"><button type="button" id="savedExportBtn">Export all as .txt</button><button type="button" id="savedCopyBtn">Copy all</button></div>
+      <div id="savedList"></div>
+    </div>
     <div id="chatScroll" class="chat-scroll">
       <div id="chatBox" class="chat-box" aria-live="polite"></div>
     </div>
+    <div id="quickChips" class="quick-chips" aria-label="Quick replies"></div>
     <div class="chat-row">
+      <button type="button" id="attachBtn" aria-label="Send a picture">📷</button>
       <input type="text" id="chatInput" placeholder="Talk to Aimmianna…" autocomplete="off" enterkeyhint="send" aria-label="Message Aimmianna">
       <button type="button" id="sendBtn">Send</button>
-      <button type="button" id="micBtn" aria-label="Speak instead of typing">Mic</button>
+      <button type="button" id="micBtn" aria-label="Voice chat — tap to talk">🎙</button>
+      <input type="file" id="imgPicker" accept="image/*" hidden>
     </div>
     <details id="pickupPanel" class="memory-box" hidden>
       <summary>Pick up where I left off</summary>
@@ -497,6 +530,11 @@
     <p id="alarmStatus" class="status-line">Alarm off.</p>
   </section>
   <section id="settingsSection" aria-label="Settings">
+    <h3>Permissions — what she can use</h3>
+    <p class="help">You decide what she can touch. Everything here is off unless you turn it on — except voice chat and reminders, which you already use. Turning something off never breaks the app: that thing just waits until you turn it back on, and she'll ask you first in plain words.</p>
+    <div id="permList"></div>
+    <p class="help">Some phone things stay out of her reach by design — other apps' private data, your passwords, and anything you never turn on. She only uses what you switch on here.</p>
+
     <h3>Her AI brain — Gemini</h3>
     <p id="aiStatus" class="status-line">Real AI: off — add your free Gemini key to talk with the real AI. Without it, she uses her own built-in lines.</p>
     <label for="aiKeyInput">Gemini API key</label>

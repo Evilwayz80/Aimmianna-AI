@@ -1,9 +1,9 @@
 {
   "version": "2.1.1",
   "build": 211,
-  "webVersion": "2.4.7",
-  "webBuild": 247,
-  "webNotes": "Ritual room + a real yard: altar, spell book, tarot and horoscopes, LARP — and outside, koi pond, sakura trees, bamboo grove and a hammock, with weather and time of day.",
+  "webVersion": "2.4.8",
+  "webBuild": 248,
+  "webNotes": "Voice chat mic + see-through chat: a small mic button beside Send with a live transcript that auto-sends when you stop talking, and a See-through toggle on the chat panel so you can see her and the room while you chat. Ritual room, deepened: every object does something real — candles are real light that burns down, incense calms the room, each crystal has its own effect, the wand and staff are the tools that make casting work, bowls show the herb stock casting spends, readings save to a history, the ball gives one daily vision, and a cast lights the altar and flares in the room. Plus a goth pass: darker palette, bat, skull and black roses, velvet drapes in the ritual room.",
   "sharedRelease": {
     "revision": 229,
     "text": "Apartment Life and shared companion memory affect both devices. Check for updates on your iPhone and Android."

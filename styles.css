@@ -2,10 +2,10 @@
    Mobile-first, iPhone-sized, safe-area aware, standalone full-screen. */
 
 :root {
-  --bg: #0a0a0f;
-  --bg2: #14101c;
-  --panel: #18121e;
-  --panel2: #1f1626;
+  --bg: #08070c;
+  --bg2: #0f0a15;
+  --panel: #130d19;
+  --panel2: #191022;
   --text: #f2eef5;
   --muted: #b9a8c4;
   --red: #c0392b;
@@ -310,6 +310,50 @@ video, audio { width: 100%; margin: 8px 0; border-radius: 10px; }
 #pickupPanel .pickup-status { overflow-wrap: anywhere; }
 #pickupPanel [hidden] { display: none; }
 
+/* ---------- Voice chat mic: small, beside Send, never over her ---------- */
+#micBtn { min-height: 38px; width: 38px; padding: 0; border-radius: 50%; font-size: 18px; line-height: 1; flex: none; align-self: center; }
+#micBtn.listening { background: #5b1f28; border-color: var(--red-bright); animation: micPulse 1.2s ease-in-out infinite; }
+@keyframes micPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, .45); } 50% { box-shadow: 0 0 0 6px rgba(231, 76, 60, 0); } }
+
+/* ---------- See-through chat: panel goes clear so the room shows behind it ---------- */
+.chat-tools { display: flex; justify-content: flex-end; gap: 8px; margin: 4px 0 0; }
+#chatMenuBtn { font-size: 12px; min-height: 28px; padding: 3px 10px; border-radius: 14px; background: transparent; border: 1px solid var(--border); color: var(--muted); }
+#stopSpeakBtn { font-size: 12px; min-height: 28px; padding: 3px 10px; border-radius: 14px; background: #5b1f28; border: 1px solid var(--red-bright); color: #fff; }
+.chat-menu { margin: 8px 0 0; padding: 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; gap: 8px; }
+.chat-menu[hidden] { display: none; }
+.chat-menu .chat-menu-row { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text); }
+.chat-menu .chat-menu-row span { flex: none; }
+.chat-menu .chat-menu-row select { flex: 1; margin: 0; }
+.chat-menu .chat-menu-row input { flex: 1; margin: 0; }
+#chatClearBtn { font-size: 12px; min-height: 28px; padding: 3px 10px; border-radius: 14px; background: transparent; border: 1px solid var(--border); color: var(--muted); text-align: left; }
+#chatClearBtn[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
+#menuVoiceBtn, #savedOpenBtn { text-align: left; }
+.quick-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.quick-chips:empty { display: none; }
+.chip { font-size: 13px; min-height: 30px; padding: 4px 12px; border-radius: 15px; background: var(--panel2); border: 1px solid var(--border); color: var(--text); }
+.chip-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.chip-x { font-size: 11px; min-height: 24px; width: 24px; padding: 0; border-radius: 50%; background: transparent; border: 1px solid var(--border); color: var(--muted); }
+#attachBtn { min-height: 38px; width: 38px; padding: 0; border-radius: 50%; font-size: 18px; line-height: 1; flex: none; align-self: center; }
+.bubble img.chat-img { display: block; max-width: 100%; border-radius: 10px; margin: 2px 0 6px; }
+.bubble .img-save { font-size: 11px; min-height: 26px; padding: 2px 10px; border-radius: 13px; }
+.saved-head { display: flex; justify-content: space-between; align-items: center; }
+.saved-item { padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; font-size: 13px; }
+.saved-item + .saved-item { margin-top: 6px; }
+.saved-item img { display: block; max-width: 160px; border-radius: 8px; margin: 4px 0; }
+.saved-item .muted { font-size: 11px; color: var(--muted); }
+.saved-item .btn-row { margin-top: 6px; }
+.perm-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.perm-row:last-child { border-bottom: none; }
+.perm-row input { flex: none; margin-top: 3px; width: 20px; height: 20px; }
+.perm-row b { display: block; font-size: 14px; }
+.perm-row span { font-size: 12px; color: var(--muted); line-height: 1.35; display: block; }
+#sheet.sheet-clear { background: rgba(18, 12, 26, .42); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+#chatSection.chat-clear .chat-scroll { background: rgba(10, 5, 16, .30); border-color: rgba(255, 255, 255, .16); }
+#chatSection.chat-clear .bubble { background: rgba(24, 14, 34, .82); text-shadow: 0 1px 3px rgba(0, 0, 0, .9); }
+#chatSection.chat-clear .bubble.you { background: rgba(58, 35, 71, .85); }
+#chatSection.chat-clear .bubble.tool { text-shadow: 0 1px 3px rgba(0, 0, 0, .9); }
+#chatSection.chat-clear .chat-row input { background: rgba(20, 12, 28, .55); }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
@@ -325,8 +369,8 @@ video, audio { width: 100%; margin: 8px 0; border-radius: 10px; }
 :root {
   --font-display: "Cinzel", "Cormorant Garamond", Georgia, serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --glass: rgba(16, 11, 22, 0.72);
-  --glass-strong: rgba(18, 12, 26, 0.94);
+  --glass: rgba(12, 8, 17, 0.72);
+  --glass-strong: rgba(14, 9, 20, 0.94);
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);

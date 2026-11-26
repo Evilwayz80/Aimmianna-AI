@@ -79,6 +79,10 @@ export function makeSpiritGame(container, deps) {
   const toast = (m) => { if (deps.toast) deps.toast(m); };
   const gainXP = (k, n) => { if (deps.gainXP) deps.gainXP(k, n); };
   const speak = (t) => { if (deps.speak) deps.speak(t); };
+  // Permissions (2.4.8): mic + camera are checked before any recording or
+  // lens use. If the toggle is off she asks first instead of using it.
+  const perm = (k) => (deps.perm ? deps.perm(k) : true);
+  const askPerm = (k, line) => { if (deps.askPerm) deps.askPerm(k, line); else toast(line); };
 
   function S() {
     const st = state();
@@ -216,6 +220,7 @@ export function makeSpiritGame(container, deps) {
   }
   async function enableMic() {
     if (micStream) return true;
+    if (!perm("mic")) { askPerm("mic", "My microphone is off — turn on Microphone in Permissions if you want the spirit box to listen."); return false; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("This device doesn't offer mic access here."); return false; }
     try {
       const ctx = ensureAudio(); if (!ctx) return false;
@@ -588,6 +593,7 @@ export function makeSpiritGame(container, deps) {
   /* ---------------------------------------------------------- EVP recorder */
   let evpState = { rec: null, stream: null, analyser: null, data: null, chunks: [], startAt: 0, peak: 0, peakAt: 0, timer: null, recs: [] };
   async function evpStart() {
+    if (!perm("mic")) { askPerm("mic", "My microphone is off — turn on Microphone in Permissions if you want to record EVP."); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("This device doesn't offer mic access here."); return; }
     if (typeof MediaRecorder === "undefined") { toast("Recording isn't available on this device."); return; }
     try {
@@ -727,6 +733,7 @@ export function makeSpiritGame(container, deps) {
     lensState.wisps = makeWisps(5);
     lensState.running = true;
     lensState.cameraOff = false;
+    if (!perm("camera")) { askPerm("camera", "My camera is off — turn on Camera in Permissions if you want the AR lens."); lensState.cameraOff = true; render(); return; }
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try { lensState.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); }
       catch (e) { lensState.cameraOff = true; }

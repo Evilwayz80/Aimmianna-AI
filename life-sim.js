@@ -1,4 +1,4 @@
-import { SKILLS, OUTFITS, UPGRADES, MARKET_MODELS, MARKET_COLORS, loadLife, skillLevel, nextLevelAt, reward, buy, currentJob, videoUrl, moveGameCash, centsFromInput, placeMarketItem } from "./life-rules.js";
+import { SKILLS, OUTFITS, TONY_HOODIES, TONY_CHAINS, UPGRADES, MARKET_MODELS, MARKET_COLORS, loadLife, skillLevel, nextLevelAt, reward, buy, currentJob, videoUrl, moveGameCash, centsFromInput, placeMarketItem } from "./life-rules.js";
 import { makeLifeFigures } from "./life-figures.js";
 import { lessonFor } from "./life-lessons.js";
 import { STORIES } from "./life-stories.js";
@@ -238,6 +238,24 @@ export async function makeLifeSim({ world, openPanel, closePanel, openExternal, 
     form.addEventListener("submit", (e) => { e.preventDefault(); rename(); });
     b.append(form);
     group(b, button("See my avatar", () => { rename(); closePanel(); }, { primary: true }));
+    // Tony's own wardrobe, for his Tripo 3D figure — hoodie colours and
+    // chains, in his style. Plain words, no game cash: it's his look.
+    const tony = section(parent, "Your 3D figure — Tony's wardrobe", "Your Tripo model wears these in the apartment. A hoodie colour washes over the whole figure, since his model is one piece — pants and boots need a new model made for that.");
+    for (const h of TONY_HOODIES) {
+      const equipped = (state.tonyStyle.hoodie || "black") === h.id;
+      row(tony, h.label, equipped ? "Wearing now" : "Hoodie colour for your figure",
+        button(equipped ? "Wearing" : "Wear it", () => { state.tonyStyle.hoodie = h.id; save(); report(`You're wearing the ${h.label.toLowerCase()}.`); render(); }, { disabled: equipped }),
+        `#${h.solid.toString(16).padStart(6, "0")}`);
+    }
+    for (const c of TONY_CHAINS) {
+      const equipped = (state.tonyStyle.chain || "none") === c.id;
+      const detail = equipped ? "Wearing now"
+        : c.id === "cross" ? "A gothic necklace with a cross charm"
+        : c.id === "both" ? "Silver chain, with the gothic cross underneath"
+        : c.id === "chain" ? "A silver chain across the chest" : "Nothing around your neck";
+      row(tony, c.label, detail,
+        button(equipped ? "Wearing" : "Wear it", () => { state.tonyStyle.chain = c.id; save(); report(c.id === "none" ? "Chain off." : `You're wearing the ${c.label.toLowerCase()}.`); render(); }, { disabled: equipped }));
+    }
     const list = section(parent, "My game wardrobe", "Clothes earned here only show on your character.");
     for (const [id, item] of Object.entries(OUTFITS)) {
       const owned = state.owned.includes(id), equipped = state.outfit === id, gated = item.needs && skillLevel(state, item.needs[0]) < item.needs[1];
@@ -352,7 +370,7 @@ export async function makeLifeSim({ world, openPanel, closePanel, openExternal, 
     diy(parent);
   }
   function projectLab(parent) {
-    const intro = section(parent, "Project Lab with Aimmianna", "Try a fictional decision, then apply what you learned. These exercises don’t spend game cash. Real plans don’t touch either wallet.");
+    const intro = section(parent, "Project Lab with Aimmianna", "This is the practice room for making things — and maybe earning from them. Everything here uses pretend money and real learning: try a decision, then use the planner for a real one. Nothing here spends real money or posts anything.");
     group(intro, button("Back to Study", () => open("study")),
       button("Go to private project planner", () => document.getElementById("lifeProjectPlanner")?.scrollIntoView({ block: "start" })));
     creatorTrack(parent);
@@ -597,6 +615,22 @@ export async function makeLifeSim({ world, openPanel, closePanel, openExternal, 
     labForm = { ...plan, minutes: plan.minutes ? String(plan.minutes) : "" };
     for (const key of ["cap", "materials", "other", "reserve", "payment"]) labForm[key] = plan[key] ? (plan[key] / 100).toFixed(2) : "";
     labResult = null;
+  }
+  // A dev/income idea from Routines, carried into the planner so he can
+  // price it out for real. The idea stays saved in Routines either way.
+  function prefillLabFromIdea(idea) {
+    if (!idea || !idea.title) return false;
+    editLabPlan({
+      ...newProject(),
+      type: /gig/i.test(idea.kind || "") ? "gig" : "business",
+      name: String(idea.title).slice(0, 70),
+      scope: (idea.plain || "") + (idea.pays ? " Pays like this: " + idea.pays : ""),
+      next: (idea.setup && idea.setup[0]) || "",
+      lesson: "",
+    });
+    open("lab");
+    report(`Planner filled in with “${idea.title}” — check the numbers, then save it.`);
+    return true;
   }
   function dailyLesson(parent) {
     const today = new Date().toDateString(), done = state.lastLesson === today;
@@ -1407,5 +1441,5 @@ export async function makeLifeSim({ world, openPanel, closePanel, openExternal, 
     return { active, tab, cash: state.cash, outfit: state.outfit, xp: { ...state.xp }, bond: state.bond, jobs: state.jobs, upgrades: [...state.upgrades],
       player: figures.player.position.toArray(), jobStep: pending?.index, study: study?.remaining || 0 };
   }
-  return { enter, leave, open, hit, walkRoom, liveStatus, pauseSignals, get active() { return active; } };
+  return { enter, leave, open, hit, walkRoom, liveStatus, pauseSignals, prefillLabFromIdea, get active() { return active; } };
 }

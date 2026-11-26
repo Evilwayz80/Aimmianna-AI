@@ -1,8 +1,14 @@
-/* Aimmianna — Ritual Room (v2.4.7)
+/* Aimmianna — Ritual Room (v2.4.8)
    Her own little witch room off the apartment: a usable altar, a spell
    book you write and draw in, tarot and horoscopes, and LARP-lite stories
    you play through together. She practices alongside you — she walks over,
    lights the candle with you, draws the sigil, reads the card.
+   Every object does something real (2.4.8): candles are real light and burn
+   down; incense calms the room and earns a focus bonus; each crystal has
+   its own effect; the wand and staff are the tools that make casting work;
+   the bowls hold the herb stock casting spends; readings save to a history
+   you can revisit; the crystal ball gives one daily vision; a cast lights
+   the altar and flares in the room, with a result card she reads aloud.
    Honest framing, shown in the room: this is play for the feeling. The
    cards are real cards and the comfort is real, but it can't reach the
    dead, and it will never pretend to be someone real. No real person's
@@ -50,6 +56,22 @@ const SPIRIT_MESSAGES = [
   "A small good thing is coming — the kind you almost miss if you blink.",
   "Your gut has been right all along. You knew. Trust that.",
   "The thing you're scared to start? It gets easier after the first step."
+];
+/* What a cast looks like when it lands — depends on the tool in her hand. */
+const CAST_OK = [
+  "it went off clean — the candles flared and the ball went bright. That's a real one.",
+  "cast and felt. The whole altar lit up for it. Whatever you wished for, it's out there now.",
+  "there it is — the room just shifted. I felt that in my chest, bestie."
+];
+const CAST_STRONG = [
+  "WHOA. The staff made that one huge — every candle flared at once. That spell is OUT there now.",
+  "with the staff, that one hit like a storm. The ball is still glowing. Whatever you cast, it heard you.",
+  "staff-cast, full power. The whole room lit up gold. That's the strongest one we've done."
+];
+const CAST_WEAK = [
+  "it went off… weakly. No tool in my hand, so it kind of fizzled — the candles barely flickered. Pick up the wand or the staff next time and it'll actually land.",
+  "cast, but it was a soft one — I had nothing to channel it through. Grab the wand or staff and cast it again, it'll be ten times stronger.",
+  "hmm, that one barely sparked. A spell needs a tool — wand or staff in my hand. Let's do it properly next time."
 ];
 const SIGNS = [
   ["Aries", "♈"], ["Taurus", "♉"], ["Gemini", "♊"], ["Cancer", "♋"],
@@ -115,7 +137,8 @@ const LARP = {
    without state/save it keeps its own localStorage save.
    Returns { render, openTab, lightCandle, toggleIncense, crystalBall,
              pickCrystal, waveWand, showBowls, scry, takeStaff,
-             mirrorVision, sitRug, addHerbs, _debug }.
+             mirrorVision, sitRug, addHerbs, skullRemark, dailyBallVision,
+             _debug }.
    ================================================================ */
 export function makeRitualGame(container, deps) {
   deps = deps || {};
@@ -138,14 +161,36 @@ export function makeRitualGame(container, deps) {
 
   function S() {
     const st = state();
-    if (!st.ritual) st.ritual = { spells: [], herbs: { sage: 0, lavender: 0, rosemary: 0, mint: 0 }, sign: "", candles: [{ lit: false, burn: 100 }, { lit: false, burn: 100 }, { lit: false, burn: 100 }], incense: false, larp: {}, log: [] };
+    if (!st.ritual) st.ritual = { spells: [], herbs: { sage: 0, lavender: 0, rosemary: 0, mint: 0 }, sign: "", candles: [{ lit: false, burn: 100 }, { lit: false, burn: 100 }, { lit: false, burn: 100 }], incense: false, larp: {}, log: [], readings: [], tool: "", amplifyUntil: 0, calmUntil: 0, ballDay: "", lastCast: null };
     const s = st.ritual;
     s.spells = s.spells || []; s.herbs = s.herbs || { sage: 0, lavender: 0, rosemary: 0, mint: 0 };
     s.candles = s.candles || [{ lit: false, burn: 100 }, { lit: false, burn: 100 }, { lit: false, burn: 100 }];
     s.larp = s.larp || {}; s.log = s.log || [];
+    s.readings = s.readings || []; s.tool = s.tool || "";
+    s.amplifyUntil = s.amplifyUntil || 0; s.calmUntil = s.calmUntil || 0;
+    s.ballDay = s.ballDay || ""; s.lastCast = s.lastCast || null;
     return s;
   }
-  function syncFx() { setFx({ candles: S().candles.map((c) => ({ lit: c.lit, burn: c.burn })), incense: S().incense }); }
+  // Push candles + incense + herb stock into the 3D room: flames, room light,
+  // smoke, and the fill level of each ingredient bowl.
+  function syncFx() { const s = S(); setFx({ candles: s.candles.map((c) => ({ lit: c.lit, burn: c.burn })), incense: s.incense, herbs: { sage: s.herbs.sage || 0, lavender: s.herbs.lavender || 0, rosemary: s.herbs.rosemary || 0, mint: s.herbs.mint || 0 } }); }
+  // Ritual XP. While incense burns, or the amethyst calm is on, the room is
+  // in calm focus and every ritual act earns +1.
+  function calmOn() { const s = S(); return s.incense || Date.now() < (s.calmUntil || 0); }
+  function rxp(n) { gainXP("ritual", n + (calmOn() ? 1 : 0)); }
+  // Reading history — every real reading lands here so he can revisit it.
+  function addReading(kind, title, text) {
+    const s = S();
+    s.readings = [{ at: Date.now(), kind, title, text }].concat(s.readings || []).slice(0, 20);
+    save();
+  }
+  function dayKey(d) { d = d || new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+  // One vision per day, same for everyone who looks that day — picked by date.
+  function dailyBallVision() {
+    const key = dayKey();
+    let h = 0; for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+    return BALL_VISIONS[h % BALL_VISIONS.length];
+  }
   // Lit candles burn down slowly; a spent candle goes out on its own.
   setInterval(() => {
     const s = S(); let changed = false;
@@ -173,11 +218,17 @@ export function makeRitualGame(container, deps) {
       ".ritual-tabs button{flex:1 1 auto;padding:8px 6px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:13px;cursor:pointer}",
       ".ritual-tabs button.on{background:var(--purple);border-color:var(--purple-soft);color:#fff}",
       ".ritual-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}",
-      ".ritual-obj{padding:12px 8px;border-radius:12px;border:1px solid var(--border);background:#160b22;color:var(--text);cursor:pointer;text-align:center}",
+      ".ritual-obj{padding:12px 8px;border-radius:12px;border:1px solid var(--border);background:#130a1d;color:var(--text);cursor:pointer;text-align:center}",
       ".ritual-obj .e{font-size:22px;display:block;margin-bottom:4px}",
       ".ritual-obj .n{font-size:13px;font-weight:600;display:block}",
       ".ritual-obj .d{font-size:11px;color:var(--muted);display:block;margin-top:2px;line-height:1.35}",
       ".ritual-obj.lit{border-color:var(--gold);box-shadow:0 0 12px rgba(255,178,58,.25)}",
+      ".ritual-sep{text-align:center;color:var(--gold);opacity:.55;font-size:12px;letter-spacing:5px;margin:2px 0 6px}",
+      ".ritual-status{font-size:12.5px;color:var(--muted);background:#120b16;border:1px solid var(--border);border-radius:10px;padding:7px 10px;margin:6px 0;line-height:1.5}",
+      ".ritual-status b{color:var(--gold)}",
+      ".ritual-result{border:1px solid var(--gold);border-radius:12px;padding:10px;margin:8px 0;background:#1c1020;box-shadow:0 0 16px rgba(212,175,55,.18)}",
+      ".ritual-result h4{margin:0 0 4px;font-size:14px;color:var(--gold)}",
+      ".ritual-result p{margin:4px 0;font-size:13px;color:var(--text);line-height:1.5}",
       ".ritual-herbs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}",
       ".ritual-herbs span{font-size:12px;background:#120b16;border:1px solid var(--border);border-radius:8px;padding:4px 8px}",
       ".ritual-log{list-style:none;padding:8px 10px;margin:8px 0;border-radius:12px;background:#120b16;border:1px solid var(--border);font-size:12.5px;color:var(--muted);max-height:180px;overflow-y:auto}",
@@ -222,34 +273,73 @@ export function makeRitualGame(container, deps) {
     if (c.burn <= 0) { c.burn = 100; c.lit = true; toast("New candle in — lit and burning."); }
     else c.lit = !c.lit;
     save(); syncFx();
-    if (c.lit) { gainXP("ritual", 2); logEvent("Lit candle " + (i + 1) + "."); summonHer("altar", "art", pick(["Candle's lit. Make a wish, Tony — I'll hold the light.", "There. One little flame, just for us. What are we wishing for?"])); }
+    if (c.lit) { rxp(2); logEvent("Lit candle " + (i + 1) + "."); summonHer("altar", "art", pick(["Candle's lit. Make a wish, Tony — I'll hold the light.", "There. One little flame, just for us. What are we wishing for?"])); }
     else { logEvent("Blew out candle " + (i + 1) + "."); toast("Candle " + (i + 1) + " is out."); }
+    if (tab === "altar") renderTab();
+  }
+  function lightAllCandles() {
+    const s = S();
+    let n = 0;
+    s.candles.forEach((c) => { if (!c.lit) { if (c.burn <= 0) c.burn = 100; c.lit = true; n++; } });
+    if (!n) { toast("All three candles are already lit."); return; }
+    save(); syncFx(); rxp(2);
+    logEvent("Lit all the candles.");
+    summonHer("altar", "art", "All three candles, lit. The whole room just warmed up — look at that glow, Tony.");
+    if (tab === "altar") renderTab();
+  }
+  function blowAllCandles() {
+    const s = S();
+    let n = 0;
+    s.candles.forEach((c) => { if (c.lit) { c.lit = false; n++; } });
+    if (!n) { toast("No candles are lit right now."); return; }
+    save(); syncFx();
+    logEvent("Blew out all the candles.");
+    toast("All candles out. The room goes back to lamplight.");
     if (tab === "altar") renderTab();
   }
   function toggleIncense() {
     const s = S(); s.incense = !s.incense; save(); syncFx();
-    if (s.incense) { gainXP("ritual", 2); logEvent("Lit the incense."); summonHer("altar", "art", pick(["Incense is going. Smells like the whole room just exhaled.", "Mmm — that's the good smoke. Breathe it in with me."])); }
+    if (s.incense) { rxp(2); logEvent("Lit the incense."); summonHer("altar", "art", pick(["Incense is going. Smells like the whole room just exhaled.", "Mmm — that's the good smoke. Breathe it in with me."])); }
     else { logEvent("Put the incense out."); toast("Incense is out."); }
     if (tab === "altar") renderTab();
   }
   function crystalBall() {
-    const v = pick(BALL_VISIONS);
-    gainXP("ritual", 3); logEvent("Crystal ball: " + v + ".");
-    summonHer("altar", "art", "The ball shows… " + v + ". Take what fits, leave the rest, yeah?");
-    toast("The crystal ball shows: " + v);
+    const v = dailyBallVision();
+    const s = S();
+    const seen = s.ballDay === dayKey();
+    if (!seen) { s.ballDay = dayKey(); save(); addReading("ball", "Crystal ball — today", v); }
+    rxp(3); logEvent("Crystal ball: " + v + ".");
+    summonHer("altar", "art", seen ? "The ball still shows today's vision — " + v + ". Same one all day; a new one comes tomorrow." : "Today the ball shows… " + v + ". That's your one for today — take what fits, leave the rest.");
+    toast("🔮 Today's vision: " + v);
     if (tab === "altar") renderTab();
   }
   function pickCrystal(i) {
     const c = CRYSTALS[i == null ? Math.floor(Math.random() * CRYSTALS.length) : i];
-    gainXP("ritual", 2); logEvent("Picked up the " + c.name + ".");
-    summonHer("altar", "art", c.name + " — " + c.meaning);
+    const s = S();
+    rxp(2);
+    let effect = "";
+    if (c.name === "Amethyst") { s.calmUntil = Date.now() + 30 * 60000; effect = " Calm for the next 30 minutes — ritual acts earn +1 XP while it lasts."; }
+    else if (c.name === "Rose Quartz") { gainXP("companion", 2); effect = " Her bond with you grows a little — she holds onto moments like this."; }
+    else if (c.name === "Clear Quartz") { s.amplifyUntil = Date.now() + 10 * 60000; effect = " Your next spell in the next 10 minutes casts amplified — stronger flare, more power."; }
+    save();
+    logEvent("Picked up the " + c.name + ".");
+    addReading("crystal", "Crystal — " + c.name, c.meaning);
+    summonHer("altar", "art", c.name + " — " + c.meaning + effect);
     toast(c.glyph + " " + c.name + ": " + c.meaning);
     if (tab === "altar") renderTab();
   }
   function waveWand() {
-    gainXP("ritual", 2); logEvent("Waved the wand.");
-    summonHer("altar", "art", pick(["Abracadabra, bestie. Did you feel that? I felt that.", "Wand's out. One swish and the whole room sparkles — watch.", "Okay, witch mode on. What are we casting?"]));
-    toast("✦ The wand leaves a little trail of sparks.");
+    const s = S();
+    if (s.tool !== "wand") {
+      s.tool = "wand"; save();
+      rxp(2); logEvent("Took up the wand.");
+      summonHer("altar", "art", "Wand's in my hand now. Spells I cast with this actually land — try one from the book.");
+      toast("🪄 She's holding the wand — casting works properly now.");
+    } else {
+      rxp(2); logEvent("Waved the wand.");
+      summonHer("altar", "art", pick(["Abracadabra, bestie. Did you feel that? I felt that.", "Wand's out. One swish and the whole room sparkles — watch.", "Okay, witch mode on. What are we casting?"]));
+      toast("✦ The wand leaves a little trail of sparks.");
+    }
     if (tab === "altar") renderTab();
   }
   function showBowls() {
@@ -258,22 +348,38 @@ export function makeRitualGame(container, deps) {
   }
   function scry() {
     const w = pick(SCRY_WORDS);
-    gainXP("ritual", 3); logEvent("Scrying board spelled: " + w + ".");
+    rxp(3); logEvent("Scrying board spelled: " + w + ".");
+    addReading("scry", "Scrying board", "The planchette spelled: " + w);
     summonHer("altar", "art", "The board spelled… " + w + ". Huh. That feels like it's for you, Tony.");
     toast("The planchette slides… " + w);
     if (tab === "altar") renderTab();
   }
   function takeStaff() {
-    gainXP("ritual", 2); logEvent("Took up the staff.");
-    summonHer("staff", "art", pick(["Staff's in hand. I look powerful, right? Say I look powerful.", "Okay — staff, cloak energy, whole witch vibe. Let's go do something magical."]));
-    toast("The staff hums a little when she holds it.");
+    const s = S();
+    if (s.tool !== "staff") {
+      s.tool = "staff"; save();
+      rxp(2); logEvent("Took up the staff.");
+      summonHer("staff", "art", "Staff's in hand — the big one. Spells hit harder with this. I feel powerful, say I look powerful.");
+      toast("🦯 She's holding the staff — spells cast strong now.");
+    } else {
+      rxp(2); logEvent("Raised the staff.");
+      summonHer("staff", "art", pick(["Staff raised. The whole room leans in when I do this.", "Okay — staff, cloak energy, whole witch vibe. Let's go do something magical."]));
+      toast("The staff hums a little when she holds it.");
+    }
+    if (tab === "altar") renderTab();
   }
   function mirrorVision() {
     const v = pick(MIRROR_VISIONS);
-    gainXP("ritual", 3); logEvent("Mirror vision: " + v + ".");
+    rxp(3); logEvent("Mirror vision: " + v + ".");
+    addReading("mirror", "Scrying mirror", v);
     summonHer("ritual_mirror", "art", "The mirror shows… " + v + ".");
     toast("In the mirror: " + v);
     if (tab === "altar") renderTab();
+  }
+  function skullRemark() {
+    rxp(1); logEvent("Greeted the skull.");
+    summonHer("staff", "art", pick(["That's Yorick — well, that's what I call him. He watches the room. Good skull.", "The skull's seen things, Tony. Mostly me talking to myself. He doesn't judge.", "Skull, black roses, velvet — this corner is the most us spot in the whole apartment."]));
+    toast("💀 The skull keeps its secrets.");
   }
   function sitRug() {
     summonHer("ritual_rug", "crossleg", pick(["Sitting in the circle with you. This is our spot now.", "Cross-legged in the pentagram. Feels safe in here, doesn't it?"]));
@@ -284,7 +390,7 @@ export function makeRitualGame(container, deps) {
       const h = pick(HERBS);
       if ((s.herbs[h.id] || 0) < 9) { s.herbs[h.id] = (s.herbs[h.id] || 0) + 1; gained.push(h.label); }
     }
-    if (gained.length) { save(); logEvent("Grew herbs in the yard" + (why ? " (" + why + ")" : "") + ": +" + gained.join(", +") + "."); }
+    if (gained.length) { save(); syncFx(); logEvent("Grew herbs in the yard" + (why ? " (" + why + ")" : "") + ": +" + gained.join(", +") + "."); }
     if (tab === "altar") renderTab();
     return gained;
   }
@@ -300,7 +406,7 @@ export function makeRitualGame(container, deps) {
     if (cv) { try { sigil = cv.toDataURL("image/png"); } catch (e) {} }
     const s = S();
     s.spells = [{ id: "sp" + Date.now(), title: title.trim() || "Untitled spell", text: text.trim(), herbs, sigil, at: Date.now() }].concat(s.spells).slice(0, 30);
-    save(); gainXP("ritual", 5); logEvent("Wrote a spell: " + (title.trim() || "Untitled spell") + ".");
+    save(); rxp(5); logEvent("Wrote a spell: " + (title.trim() || "Untitled spell") + ".");
     summonHer("altar", "art", pick(["That's a good one. I can feel it already — want to cast it?", "Written down and everything. Our spell book is getting real, Tony."]));
     toast("Spell saved in the book.");
     sigilStrokes = [];
@@ -312,9 +418,23 @@ export function makeRitualGame(container, deps) {
     const missing = (sp.herbs || []).filter((h) => (s.herbs[h] || 0) < 1);
     if (missing.length) { toast("Not enough herbs — you need " + missing.map((h) => (HERBS.find((x) => x.id === h) || {}).label).join(", ") + ". Tend the garden to grow more."); return; }
     (sp.herbs || []).forEach((h) => { s.herbs[h] = Math.max(0, (s.herbs[h] || 0) - 1); });
-    save(); gainXP("ritual", 8); logEvent("Cast \"" + sp.title + "\"" + (sp.herbs.length ? " (" + sp.herbs.join(", ") + ")" : "") + ".");
-    summonHer("altar", "art", pick(["Casting \"" + sp.title + "\"… there. Did you feel that shift? I did.", "\"" + sp.title + "\" — cast. The candles burned a little brighter just now, I swear."]));
-    toast("✦ \"" + sp.title + "\" is cast.");
+    // The tool in her hand decides how hard it lands: no tool, it fizzles;
+    // wand, it lands clean; staff, it hits strong. Clear quartz amplifies.
+    const tool = s.tool || "";
+    const amplified = Date.now() < (s.amplifyUntil || 0);
+    const power = !tool ? "weak" : (tool === "staff" ? "strong" : "normal");
+    // Visible result in the room: the altar candles all light and the room
+    // flares — flames jump, the crystal ball glows — for a few seconds.
+    s.candles.forEach((c) => { if (c.burn > 0) c.lit = true; });
+    save(); syncFx();
+    setFx({ flare: power === "strong" ? 7000 : power === "normal" ? 4500 : 1500 });
+    rxp((power === "weak" ? 3 : power === "strong" ? 12 : 8) + (amplified ? 4 : 0));
+    const outcome = pick(power === "weak" ? CAST_WEAK : power === "strong" ? CAST_STRONG : CAST_OK);
+    s.lastCast = { at: Date.now(), title: sp.title, power, amplified, outcome, herbs: sp.herbs || [] };
+    save();
+    logEvent("Cast \"" + sp.title + "\" — " + power + (amplified ? ", amplified" : "") + ".");
+    summonHer("altar", "art", "\"" + sp.title + "\" — " + outcome);
+    toast("✦ \"" + sp.title + "\" is cast" + (power === "weak" ? " — weakly, with no tool in hand." : power === "strong" ? " — the whole altar flares!" : "."));
     renderTab();
   }
   function deleteSpell(id) { const s = S(); s.spells = (s.spells || []).filter((x) => x.id !== id); save(); renderTab(); }
@@ -331,7 +451,8 @@ export function makeRitualGame(container, deps) {
     ];
     const picks = deck.slice(0, 3).map((c, i) => ({ c, rev: Math.random() < 0.3, pos: pos[i] }));
     const s = S(); s.lastShadow = { at: Date.now(), picks: picks.map((p) => ({ n: p.c[1], g: p.c[2], num: p.c[0], rev: p.rev, pos: p.pos[0] })) }; save();
-    gainXP("ritual", 4); logEvent("Shadow spread: " + picks.map((p) => p.c[1]).join(", ") + ".");
+    rxp(4); logEvent("Shadow spread: " + picks.map((p) => p.c[1]).join(", ") + ".");
+    addReading("shadow", "Shadow spread — " + picks.map((p) => p.c[1]).join(", "), picks.map((p) => p.pos[0] + ": " + p.c[1] + (p.rev ? " reversed" : "")).join(" · "));
     summonHer("ritual_rug", "crossleg", "Okay — shadow work. " + picks.map((p) => p.pos[0] + ", " + p.c[1] + (p.rev ? " reversed" : "") + " — " + (p.rev ? p.c[4] : p.c[3])).join(" ") + " Sit with that a sec. I'm right here.");
     renderTab();
   }
@@ -340,7 +461,8 @@ export function makeRitualGame(container, deps) {
     const card = deck.length ? pick(deck) : null;
     const msg = pick(SPIRIT_MESSAGES);
     const s = S(); s.lastPull = { at: Date.now(), card: card ? card[1] : "", msg }; save();
-    gainXP("ritual", 3); logEvent("Spirit message pull: " + (card ? card[1] + " — " : "") + msg);
+    rxp(3); logEvent("Spirit message pull: " + (card ? card[1] + " — " : "") + msg);
+    addReading("spirit", "Spirit message" + (card ? " — " + card[1] : ""), msg);
     summonHer("ritual_rug", "crossleg", (card ? card[1] + " came up. " : "") + msg);
     renderTab();
   }
@@ -366,7 +488,7 @@ export function makeRitualGame(container, deps) {
     st.lastOutcome = ch.outcome;
     st.step++;
     if (st.step >= sc.steps.length) st.done = true;
-    s.larp[id] = st; save(); gainXP("ritual", 6);
+    s.larp[id] = st; save(); rxp(6);
     logEvent(sc.title + ": " + ch.label + ".");
     summonHer("ritual_rug", "read", ch.outcome);
     renderTab();
@@ -385,6 +507,28 @@ export function makeRitualGame(container, deps) {
       herbs.innerHTML = "<span><b>Herbs from the yard:</b></span>";
       HERBS.forEach((h) => { const sp = el("span", "", h.emoji + " " + h.label + " ×" + (s.herbs[h.id] || 0) + " — " + h.use); herbs.appendChild(sp); });
       d.appendChild(herbs);
+      // Candlelight is real light: each lit candle warms the room.
+      const litCount = s.candles.filter((c) => c.lit).length;
+      const status = el("div", "ritual-status");
+      status.appendChild(el("span", "", "🕯️ Candlelight: " + litCount + "/3 lit — each lit candle warms the room" + (litCount ? ", and with the lamp off they light it on their own." : " — light one and watch the room glow.")));
+      d.appendChild(status);
+      const candleBtns = el("div", "btn-row");
+      const lightAll = el("button", "wide-btn", "Light all three candles"); lightAll.type = "button";
+      lightAll.addEventListener("click", lightAllCandles);
+      const blowAll = el("button", "wide-btn", "Blow them all out"); blowAll.type = "button";
+      blowAll.addEventListener("click", blowAllCandles);
+      candleBtns.appendChild(lightAll); candleBtns.appendChild(blowAll); d.appendChild(candleBtns);
+      // Today's vision from the ball — one a day, same all day.
+      const vision = el("div", "ritual-card");
+      vision.appendChild(el("span", "g", "🔮"));
+      vision.appendChild(el("span", "n", "Today's vision"));
+      vision.appendChild(el("span", "r", dailyBallVision() + " — one vision a day, same all day, a new one tomorrow."));
+      d.appendChild(vision);
+      if (calmOn()) {
+        const calm = el("div", "ritual-status");
+        calm.appendChild(el("span", "", "💜 Calm focus is on — ritual acts earn +1 XP" + (s.incense ? " while the incense burns." : " from the amethyst.")));
+        d.appendChild(calm);
+      }
       const grid = el("div", "ritual-grid");
       const items = [
         { e: "🕯️", n: "Candle 1" + (s.candles[0].lit ? " · lit" : "") + " (" + s.candles[0].burn + "%)", d: "Light it, blow it out. It burns down.", fn: () => lightCandle(0), lit: s.candles[0].lit },
@@ -392,7 +536,9 @@ export function makeRitualGame(container, deps) {
         { e: "🕯️", n: "Candle 3" + (s.candles[2].lit ? " · lit" : "") + " (" + s.candles[2].burn + "%)", d: "Light it, blow it out. It burns down.", fn: () => lightCandle(2), lit: s.candles[2].lit },
         { e: "💨", n: "Incense" + (s.incense ? " · burning" : ""), d: "Light the censor — smoke rises.", fn: toggleIncense, lit: s.incense },
         { e: "🔮", n: "Crystal ball", d: "Gaze in — a vision, for reflection.", fn: crystalBall },
-        { e: "💎", n: "Crystals", d: "Pick one up, hear what it means.", fn: () => pickCrystal() },
+        { e: "💜", n: "Amethyst", d: "Calm for 30 min — ritual acts earn +1 XP.", fn: () => pickCrystal(0) },
+        { e: "💗", n: "Rose Quartz", d: "Bond grows a little — love that starts with you.", fn: () => pickCrystal(1) },
+        { e: "🤍", n: "Clear Quartz", d: "Your next cast in 10 min hits amplified.", fn: () => pickCrystal(2) },
         { e: "🪄", n: "Wand", d: "One swish. Sparks, obviously.", fn: waveWand },
         { e: "🥣", n: "Ingredient bowls", d: "See the herbs the yard grew.", fn: showBowls },
         { e: "🔤", n: "Scrying board", d: "The planchette spells a word.", fn: scry },
@@ -429,6 +575,28 @@ export function makeRitualGame(container, deps) {
         '<div class="btn-row"><button type="button" id="ritualSigilUndo" class="wide-btn">Undo stroke</button><button type="button" id="ritualSigilClear" class="wide-btn">Clear</button></div>' +
         '<div class="btn-row"><button type="button" id="ritualSpellSave" class="wide-btn accent">Save spell</button></div>';
       d.appendChild(form);
+      // The tool in her hand decides how a cast lands — show it, and let him
+      // hand her one from here too (the 3D wand and staff do the same).
+      const toolRow = el("div", "ritual-status");
+      const toolName = s.tool === "wand" ? "the wand 🪄" : s.tool === "staff" ? "the staff 🦯" : "nothing yet";
+      toolRow.appendChild(el("span", "", "She's holding: " + toolName + ". Spells cast with no tool come out weak; the staff makes them strong."));
+      d.appendChild(toolRow);
+      const toolBtns = el("div", "btn-row");
+      const tw = el("button", "wide-btn", "Take up the wand"); tw.type = "button";
+      tw.addEventListener("click", () => { waveWand(); renderTab(); });
+      const ts = el("button", "wide-btn", "Take up the staff"); ts.type = "button";
+      ts.addEventListener("click", () => { takeStaff(); renderTab(); });
+      toolBtns.appendChild(tw); toolBtns.appendChild(ts); d.appendChild(toolBtns);
+      // The last cast, with its visible result — she reads it aloud when it lands.
+      if (s.lastCast) {
+        const rc = el("div", "ritual-result");
+        rc.appendChild(el("h4", "", "✦ Cast result — " + s.lastCast.title));
+        rc.appendChild(el("p", "", s.lastCast.outcome));
+        const meta = el("p", "", (s.lastCast.power === "weak" ? "Came out weak — no tool in hand." : s.lastCast.power === "strong" ? "Strong cast — staff power." : "Clean cast.") + (s.lastCast.amplified ? " Amplified by clear quartz." : "") + (s.lastCast.herbs.length ? " Herbs spent: " + s.lastCast.herbs.map((id) => (HERBS.find((x) => x.id === id) || {}).label).join(", ") + "." : ""));
+        meta.style.color = "var(--muted)"; meta.style.fontSize = "12px";
+        rc.appendChild(meta);
+        d.appendChild(rc);
+      }
       const list = el("div");
       if (!s.spells.length) list.innerHTML = '<p class="help">No spells yet — write your first one above.</p>';
       s.spells.forEach((sp) => {
@@ -518,6 +686,22 @@ export function makeRitualGame(container, deps) {
         const a = el("div", "ritual-answer", (s.lastPull.card ? s.lastPull.card + " — " : "") + s.lastPull.msg);
         d.appendChild(a);
       }
+      // Reading history — every shadow spread, spirit pull, mirror, scry,
+      // ball vision and crystal reading, kept so he can revisit them.
+      if (s.readings && s.readings.length) {
+        const hh = el("h4", "", "📖 Reading history");
+        hh.style.margin = "14px 0 4px"; d.appendChild(hh);
+        const ul = el("ul", "ritual-log");
+        s.readings.slice(0, 8).forEach((r) => {
+          const li = el("li", "", "");
+          const when = new Date(r.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " " + new Date(r.at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+          li.appendChild(el("b", "", r.title + " "));
+          li.appendChild(document.createTextNode("— " + r.text + "  ·  " + when));
+          ul.appendChild(li);
+        });
+        d.appendChild(ul);
+        if (s.readings.length > 8) d.appendChild(el("p", "help", "Showing the latest 8 of " + s.readings.length + " readings."));
+      }
       const hTitle = el("h4", "", "Your stars");
       hTitle.style.margin = "14px 0 4px"; d.appendChild(hTitle);
       if (!s.sign) {
@@ -582,7 +766,7 @@ export function makeRitualGame(container, deps) {
   function render() {
     injectStyles();
     container.innerHTML = "";
-    const head = el("p", "help", "Her ritual room — altar, spell book, tarot and stars, and stories to play. Everything here does something, and she does it with you.");
+    const head = el("p", "help", "❖ Her ritual room ❖ — altar, spell book, tarot and stars, and stories to play. Everything here does something, and she does it with you.");
     container.appendChild(head);
     const tabs = el("div", "ritual-tabs");
     [["altar", "🕯️ Altar"], ["book", "📖 Spell Book"], ["stars", "🔮 Tarot & Stars"], ["larp", "🎭 LARP"]].forEach(([id, label]) => {
@@ -592,6 +776,7 @@ export function makeRitualGame(container, deps) {
       tabs.appendChild(b);
     });
     container.appendChild(tabs);
+    container.appendChild(el("div", "ritual-sep", "🦇 · ✦ · 🕯️ · ✦ · 🦇"));
     const body = el("div"); body.id = "ritualBody"; container.appendChild(body);
     renderTab();
   }
@@ -599,8 +784,8 @@ export function makeRitualGame(container, deps) {
   render();
   return {
     render, openTab: (t) => { tab = t; render(); },
-    lightCandle, toggleIncense, crystalBall, pickCrystal, waveWand, showBowls,
-    scry, takeStaff, mirrorVision, sitRug, addHerbs,
+    lightCandle, lightAllCandles, blowAllCandles, toggleIncense, crystalBall, pickCrystal, waveWand, showBowls,
+    scry, takeStaff, mirrorVision, sitRug, addHerbs, skullRemark, dailyBallVision,
     _debug: { state: S }
   };
 }

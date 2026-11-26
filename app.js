@@ -30,9 +30,10 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.7";
+const VERSION = "Aimmianna 3D v2.4.8";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
+let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
 window.__aimmiannaPauseSignals = (keepPendingCamera = false) => lifeSim?.pauseSignals(keepPendingCamera);
 let brewingUntil = 0;
 
@@ -50,7 +51,13 @@ const DEFAULT_STATE = {
   bedtimeOn: false, bedtimeTime: "22:30",
   alarmOn: false, alarmTime: "07:00", alarmDaily: false,
   notes: "", calNotes: {}, album: [], albumIdx: 0,
-  wardrobeHintHidden: false, memoryVisible: false,
+  wardrobeHintHidden: false, memoryVisible: false, chatClear: false,
+  // chat upgrades (2.4.8): saved messages + pictures, quick replies, voice speed
+  voiceRate: 1, quickReplies: [], saved: [], savedPics: [],
+  // permissions (2.4.8): what she may use. Voice chat + reminders stay on —
+  // he already uses those. Everything else starts off until he turns it on.
+  perms: { camera: false, mic: true, notifications: true, location: false, photos: false, calendar: true, devComputer: false, devPhone: false, devMailbox: false, devClock: true },
+  yardLat: 0,
   dyeIndex: 0, foundationIndex: 0, lastBedtimeFired: "", lastAlarmFired: "",
   // v2
   behaviorRules: [], reminders: [], notifications: [],
@@ -89,6 +96,11 @@ function loadState() {
     const out = Object.assign(freshState(), s);
     out.wardrobe = Object.assign(freshState().wardrobe, s.wardrobe || {});
     out.closet = Object.assign(freshState().closet, s.closet || {});
+    out.perms = Object.assign(freshState().perms, s.perms || {});
+    out.quickReplies = Array.isArray(s.quickReplies) ? s.quickReplies.filter((x) => typeof x === "string").slice(0, 8) : [];
+    out.saved = Array.isArray(s.saved) ? s.saved.slice(-50) : [];
+    out.savedPics = Array.isArray(s.savedPics) ? s.savedPics.slice(-20) : [];
+    out.voiceRate = [0.8, 1, 1.2].indexOf(Number(s.voiceRate)) === -1 ? 1 : Number(s.voiceRate);
     return out;
   } catch (e) { return freshState(); }
 }
@@ -121,7 +133,10 @@ window.addEventListener("pagehide", saveNow);
 const $ = (id) => document.getElementById(id);
 const els = {};
 ["idleFx","idleLabel","roomLabel","wardrobeStatus","outfitStatus","homeStatus",
- "chatBox","chatScroll","chatInput","sendBtn","micBtn","speakBtn",
+ "chatBox","chatScroll","chatInput","sendBtn","micBtn","speakBtn","chatClearBtn",
+ "chatMenuBtn","chatMenu","stopSpeakBtn","menuVoiceBtn","voiceRateSel","savedOpenBtn",
+ "quickAddInput","quickAddBtn","quickChips","attachBtn","imgPicker","savedPanel","savedList",
+ "savedCloseBtn","savedExportBtn","savedCopyBtn","permList","yardLocBtn",
  "greetingAutoBtn","greetingBtn","voiceStatus","aiStatus","typecastStatus","fishStatus",
  "elevenStatus","neuralStatus","memoryView","memoryToggle","careStatus","careCounts","careStage",
  "careFigure","careBath","careBubbles","careSteam","careSparkle","toast","toastMsg","toastAct",
@@ -191,6 +206,7 @@ function openPanel(id) {
   $("sheetBack").style.visibility = id === "hubSection" || id === "lifeSection" ? "hidden" : "visible";
   els.sheetBody.scrollTop = 0;
   openPanelId = id;
+  refreshChatClear(); // sheet only goes clear while Talk is the open panel
   document.querySelectorAll("#dock [data-goto]").forEach((b) => b.classList.toggle("on", b.dataset.goto === id));
   onPanelOpened(id);
 }
@@ -202,6 +218,7 @@ function closePanel() {
   if (was === "gamesSection") stopCatch();
   if (was === "lifeSection") lifeSim?.pauseSignals();
   els.chatInput.blur();
+  refreshChatClear();
 }
 $("sheetClose").addEventListener("click", closePanel);
 $("sheetBack").addEventListener("click", () => openPanel("hubSection"));
@@ -900,6 +917,8 @@ const spirit = makeSpiritGame(document.getElementById("spiritRoot"), {
   save: () => saveState(),
   toast: (m) => toast(m),
   gainXP: (k, n) => gainXP(k, n),
+  perm: (k) => permOn(k),
+  askPerm: (k, line) => askPerm(k, line),
   speak: (t) => { try { speakLine(t, { quietIfRecent: true }); } catch (e) {} }
 });
 window.__spirit = spirit;
@@ -1436,7 +1455,18 @@ function addBubble(who, text, opts) {
   opts = opts || {};
   const b = document.createElement("div");
   b.className = "bubble " + (who === "you" ? "you" : who === "tool" ? "tool" : "her") + (opts.thinking ? " thinking" : "");
-  if (who === "tool") b.textContent = text;
+  if (opts.idx != null) b.dataset.idx = String(opts.idx);
+  if (opts.img) {
+    const im = document.createElement("img"); im.className = "chat-img"; im.src = opts.img; im.alt = "Photo in chat";
+    b.appendChild(im);
+    const cap = document.createElement("div"); cap.textContent = (who === "you" ? "Photo you sent" : "Photo she sent") + (opts.name ? " — " + opts.name : "");
+    cap.style.cssText = "font-size:11px;opacity:.75";
+    b.appendChild(cap);
+    const sv = document.createElement("button"); sv.type = "button"; sv.className = "img-save"; sv.textContent = "💾 Save picture";
+    sv.addEventListener("click", (e) => { e.stopPropagation(); saveChatPic(opts.idx); });
+    b.appendChild(sv);
+    if (text) b.appendChild(document.createTextNode(text));
+  } else if (who === "tool") b.textContent = text;
   else if (who === "her" && !opts.thinking) {
     const whoEl = document.createElement("span"); whoEl.className = "who"; whoEl.textContent = "Aimmianna: ";
     b.appendChild(whoEl); b.appendChild(document.createTextNode(text));
@@ -1456,7 +1486,7 @@ function addBubble(who, text, opts) {
 function renderChat() {
   els.chatBox.innerHTML = "";
   if (!state.chat.length) { addBubble("her", "Heyy, Tony. I'm Aimmianna. Talk to me straight — what's on your mind, bestie?"); return; }
-  state.chat.forEach((m) => addBubble(m.who, m.text, { sources: m.sources }));
+  state.chat.forEach((m, i) => addBubble(m.who, m.text, { sources: m.sources, img: m.img, name: m.name, idx: i }));
 }
 function rememberFrom(text) {
   const low = text.toLowerCase();
@@ -1483,7 +1513,7 @@ els.memoryView.hidden = !state.memoryVisible; refreshMemoryView();
 
 function deliverHerReply(reply, userText, sources, fromGemini = false) {
   state.chat.push(sources && sources.length ? { who: "her", text: reply, sources } : { who: "her", text: reply });
-  addBubble("her", reply, { sources });
+  addBubble("her", reply, { sources, idx: state.chat.length - 1 });
   showSpeech(reply);
   speakReply(reply, fromGemini);
   if (userText) rememberFrom(userText);
@@ -1799,6 +1829,7 @@ async function runTool(name, a) {
         return { ok: true, saved: "note", note: "note saved" };
       }
       const r = addReminder(title, a.date, a.time);
+      if (!r) return { ok: false, error: "reminder not set — Calendar & Reminders is off in Permissions" };
       return { ok: true, saved: "reminder", date: r.date, time: r.time || "all day", note: "reminder set — " + prettyDate(r.date) + (r.time ? " " + fmtHM(r.time) : "") };
     }
     case "manageTask": return manageTask(a.action, a.title, a.habit);
@@ -1965,6 +1996,12 @@ function localCommand(raw) {
   if (lc) { const c = lc[2]; const r = c === "off" || c === "on" ? controlDevice("lamp", c, "all") : controlDevice("lamp", "color", world.getHer().room, c); return r.ok ? "Done — " + r.note + ". Vibes." : null; }
   if (/\b(make|brew|get)\b.*\bcoffee\b/.test(t)) { brewCoffee(); return "Coffee coming up. Black, like my soul."; }
   if (/\b(run|fill|draw)\b.*\b(bath|tub)\b/.test(t)) { setBath3D(true); return "Running a bath. Bubbles? Obviously."; }
+  // "Find me a dev idea" — the Routines panel promises this works any time.
+  // She goes to the PC, hunts, and saves the idea; the routine announces it.
+  if (/\b(dev idea|income idea|money idea|make money|earn money)\b/.test(t)) {
+    runDevIdeasRoutine();
+    return "On it — let me hunt for a money-making idea. I'll show you what I find in Routines.";
+  }
   const act = t.match(/\b(play|open|start|do)\b.*\b(tarot|memory|ember|dice|album|photos)\b/);
   if (act) { const n = act[2] === "photos" || act[2] === "album" ? "photo_album" : act[2]; runTool("launchActivity", { activityName: n }); return "Okay, opening " + (n === "photo_album" ? "the album" : n) + "."; }
   const rem = raw.match(/remind me (?:to )?(.+?)(?: (tomorrow|today))?(?: at (\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?(?: (tomorrow|today))?\s*[.!]?$/i);
@@ -1974,6 +2011,7 @@ function localCommand(raw) {
     let time = "";
     if (rem[3]) { let h = +rem[3]; const m = rem[4] ? +rem[4] : 0; const ap = (rem[5] || "").toLowerCase(); if (ap === "pm" && h < 12) h += 12; if (ap === "am" && h === 12) h = 0; time = String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0"); }
     const r = addReminder(rem[1].replace(/\s+(tomorrow|today)$/i, ""), todayKey(d), time);
+    if (!r) return "Noted — but reminders are off, so I can't set that one yet.";
     return "Got it — I'll remind you " + prettyDate(r.date).toLowerCase() + (r.time ? " at " + fmtHM(r.time) : "") + ". It's on my phone now.";
   }
   const task = raw.match(/^(?:add|put) (.+?) (?:to|on) (?:my )?(?:to-?do|task|list)/i);
@@ -2049,7 +2087,7 @@ async function sendChat() {
   // Keep explicit local notes out of any later chat request, too.
   if (!isCrisisText(text) && handlePickupCommand(text)) return;
   state.chat.push({ who: "you", text });
-  addBubble("you", text);
+  addBubble("you", text, { idx: state.chat.length - 1 });
   saveState();
   noteActivity();
   gainXP("companion", 1);
@@ -2149,6 +2187,7 @@ function stopAllVoice() {
   speakGen++;
   cancelVoicePlayback();
   speaking = false; setTalking(false); duckMusic(false);
+  refreshStopBtn();
 }
 function playAudioBlob(blob) {
   return new Promise((resolve, reject) => {
@@ -2347,7 +2386,7 @@ function speakDevice(text) {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       if (deviceVoice) u.voice = deviceVoice;
-      u.pitch = 1.0; u.rate = 1.0;
+      u.pitch = 1.0; u.rate = state.voiceRate || 1;
       u.onend = () => resolve(true);
       u.onerror = () => resolve(false);
       window.speechSynthesis.speak(u);
@@ -2465,6 +2504,7 @@ async function speakReply(reply, fromGemini = false) {
   const gen = ++speakGen;
   cancelVoicePlayback();
   speaking = true; if (world) world.setTalking(true);
+  refreshStopBtn();
   duckMusic(true);
   const providers = [];
   if (!IS_WALLPAPER && fromGemini && geminiVoiceEnabled() && Date.now() >= geminiSpeechRetryAt) {
@@ -2498,7 +2538,7 @@ async function speakReply(reply, fromGemini = false) {
     }
     catch (e) { /* cascade to the next voice */ }
   }
-  if (gen === speakGen) { speaking = false; setTalking(false); if (world) world.setTalking(false); duckMusic(false); }
+  if (gen === speakGen) { speaking = false; setTalking(false); if (world) world.setTalking(false); duckMusic(false); refreshStopBtn(); }
 }
 /* A line she says out loud from a device/room reaction (not stored in chat). */
 let lastLineAt = 0;
@@ -2521,7 +2561,10 @@ els.speakBtn.addEventListener("click", () => {
   state.speakOn = !state.speakOn; saveState(); refreshSpeakBtn();
   if (!state.speakOn) stopAllVoice();
 });
-function refreshSpeakBtn() { els.speakBtn.textContent = state.speakOn ? "Voice: on (tap to turn off)" : "Voice: off (tap to turn on)"; }
+function refreshSpeakBtn() {
+  els.speakBtn.textContent = state.speakOn ? "Voice: on (tap to turn off)" : "Voice: off (tap to turn on)";
+  if (els.menuVoiceBtn) els.menuVoiceBtn.textContent = state.speakOn ? "🔊 Her voice replies: on" : "🔇 Her voice replies: off";
+}
 
 /* Unlock audio inside the Enter tap (iOS Safari needs a user gesture once). */
 let actx = null;
@@ -2576,23 +2619,300 @@ els.greetingAutoBtn.addEventListener("click", () => {
 });
 function refreshGreetingBtn() { els.greetingAutoBtn.textContent = state.greetingAuto ? "Greeting on open: on (tap to turn off)" : "Greeting on open: off (tap to turn on)"; }
 
-/* ---------------- mic ---------------- */
+/* ---------------- mic (voice chat) ---------------- */
+/* Small mic button beside Send. Tap once to talk: the live transcript shows in
+   the chat box as he speaks, and it auto-sends when he stops. Tap again while
+   listening to stop early and send what she heard. Her reply speaks through
+   the existing voice path. Mic permission is only asked on tap, never on load. */
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let voiceRec = null, voiceListening = false, voiceHeard = "";
+function voiceResetBtn() {
+  els.micBtn.textContent = "🎙"; els.micBtn.classList.remove("listening");
+  els.chatInput.placeholder = "Talk to Aimmianna…";
+}
 function startListening() {
-  if (NATIVE && NATIVE.listen) { els.micBtn.textContent = "Listening…"; try { NATIVE.listen(); } catch (e) { els.micBtn.textContent = "Mic"; } return; }
-  if (!SpeechRec) { toast("Voice input isn't available in this browser — try typing, or use your keyboard's mic button."); return; }
+  // Tap again while listening: stop and send what she heard.
+  if (voiceListening && voiceRec) { try { voiceRec.stop(); } catch (e) {} return; }
+  // Permissions: she checks the mic toggle before listening, and asks
+  // first in plain words instead of using it while it's off.
+  if (!permOn("mic")) { askPerm("mic", "My microphone is off — turn on Microphone in Permissions if you want to talk to me out loud."); return; }
+  if (NATIVE && NATIVE.listen) {
+    els.micBtn.textContent = "●"; els.micBtn.classList.add("listening");
+    els.chatInput.placeholder = "Listening… speak now";
+    try { NATIVE.listen(); } catch (e) { voiceResetBtn(); }
+    return;
+  }
+  if (!SpeechRec) { toast("Voice input isn't supported on this browser — try typing instead."); return; }
   try {
     const rec = new SpeechRec();
-    rec.lang = navigator.language || "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
-    els.micBtn.textContent = "Listening…";
-    rec.onresult = (e) => { els.chatInput.value = e.results[0][0].transcript; sendChat(); };
-    rec.onend = () => { els.micBtn.textContent = "Mic"; };
-    rec.onerror = () => { els.micBtn.textContent = "Mic"; toast("Voice input didn't work — try typing."); };
-    rec.start();
-  } catch (e) { els.micBtn.textContent = "Mic"; toast("Voice input not available here."); }
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true; // live transcript while he talks
+    rec.maxAlternatives = 1;
+    voiceRec = rec; voiceListening = true; voiceHeard = "";
+    els.micBtn.textContent = "●"; els.micBtn.classList.add("listening");
+    els.chatInput.placeholder = "Listening… speak now";
+    rec.onresult = (e) => {
+      let interim = "", fin = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) fin += t; else interim += t;
+      }
+      if (fin) voiceHeard = (voiceHeard + " " + fin).trim();
+      els.chatInput.value = (voiceHeard + " " + interim).trim(); // live transcript
+    };
+    rec.onend = () => {
+      voiceListening = false; voiceRec = null;
+      voiceResetBtn();
+      if (els.chatInput.value.trim()) sendChat(); // auto-send when he stops
+    };
+    rec.onerror = (e) => {
+      voiceListening = false; voiceRec = null;
+      voiceResetBtn();
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Microphone is blocked — allow it in your browser settings, or type instead.");
+      else if (e.error === "no-speech") { /* nothing heard — leave the input alone */ }
+      else if (e.error !== "aborted") toast("Voice input didn't work — try typing.");
+    };
+    rec.start(); // mic permission is asked here, only on tap — never on load
+  } catch (e) { voiceListening = false; voiceRec = null; voiceResetBtn(); toast("Voice input isn't supported on this browser — try typing instead."); }
 }
-window.__aimmiannaHeard = (text) => { els.micBtn.textContent = "Mic"; if (text) { els.chatInput.value = text; sendChat(); } };
+window.__aimmiannaHeard = (text) => { voiceResetBtn(); if (text) { els.chatInput.value = text; sendChat(); } };
 els.micBtn.addEventListener("click", startListening);
+
+/* ---------------- permissions (2.4.8) ---------------- */
+/* One toggle per access, in Settings. She checks the toggle before using
+   that access; if it's off and something needs it, she asks him first in
+   plain words instead of using it or failing silently. Turning something
+   off never breaks the app — that feature just waits. Defaults: voice
+   chat + reminders stay on (he already uses them); everything else off. */
+const PERMS_DEF = [
+  { key: "mic", label: "Microphone", line: "Lets her listen when you tap the mic — voice chat, and the spirit game's EVP recorder." },
+  { key: "camera", label: "Camera", line: "Lets her use the camera for the spirit game's AR lens. Nothing is recorded or sent." },
+  { key: "notifications", label: "Notifications", line: "Lets her pop a reminder on your phone even when the app is in the background." },
+  { key: "location", label: "Location", line: "Lets her set the yard light from your real sunrise and sunset. Only used for the sky." },
+  { key: "photos", label: "Photos & Files", line: "Lets you send her pictures in chat, and lets her save pictures you tap Save on." },
+  { key: "calendar", label: "Calendar & Reminders", line: "Lets her set reminders and goals for you, and put them on the calendar." },
+  { key: "devComputer", label: "Computer (her desk PC)", line: "Lets her use the computer for your calendar and notes." },
+  { key: "devPhone", label: "Phone (on her desk)", line: "Lets her use the phone on her desk for messages and calls." },
+  { key: "devClock", label: "Clock (alarms)", line: "Lets her sound your reminders and alarms out loud. Off means they just wait quietly in the list." },
+  { key: "devMailbox", label: "Mailbox (email)", line: "For her mailbox, when it arrives — email and sorting. Not built yet; this switch will control it then." }
+];
+function permOn(key) { return !!(state.perms && state.perms[key]); }
+function askPerm(key, line) {
+  // She asks in plain words — in chat and as a toast — never silently.
+  toast(line + " (Settings → Permissions)");
+  try { deliverHerReply(line + " Turn it on in Settings, under Permissions, and I'll use it.", ""); } catch (e) {}
+}
+function renderPerms() {
+  const box = els.permList; if (!box) return;
+  box.innerHTML = "";
+  for (const p of PERMS_DEF) {
+    const row = document.createElement("label"); row.className = "perm-row";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = permOn(p.key);
+    cb.setAttribute("aria-label", p.label);
+    cb.addEventListener("change", () => { state.perms[p.key] = cb.checked; saveState(); toast(p.label + (cb.checked ? " on — she can use it now." : " off — that just waits until you turn it back on.")); });
+    const txt = document.createElement("span");
+    const b = document.createElement("b"); b.textContent = p.label;
+    const s = document.createElement("span"); s.textContent = p.line;
+    txt.appendChild(b); txt.appendChild(s);
+    row.appendChild(cb); row.appendChild(txt); box.appendChild(row);
+  }
+}
+renderPerms();
+
+/* ---------------- see-through chat ---------------- */
+/* Toggle on the chat panel itself. Remembers the choice in state (saved to
+   localStorage with everything else), so it survives reloads. The sheet only
+   goes clear while Talk is the open panel — other panels keep their normal look. */
+function refreshChatClear() {
+  const on = !!state.chatClear;
+  $("chatSection").classList.toggle("chat-clear", on);
+  els.sheet.classList.toggle("sheet-clear", on && openPanelId === "chatSection");
+  els.chatClearBtn.textContent = on ? "👁 See-through: on" : "👁 See-through: off";
+  els.chatClearBtn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+els.chatClearBtn.addEventListener("click", () => { state.chatClear = !state.chatClear; saveState(); refreshChatClear(); });
+
+/* ---------------- chat upgrades (2.4.8) ---------------- */
+/* Options menu, quick-reply chips, picture sending, saving messages and
+   pictures, voice on/off + speed + stop. Pictures are kept in the chat
+   only — her acknowledgement is a plain local line. She is NOT sent the
+   picture and cannot see or analyse it; the app never claims otherwise. */
+const PIC_ACKS = [
+  "Got it — your picture's here with me. I'll keep it safe in our chat.",
+  "Nice, I got your picture. It's saved right here in the chat, bestie.",
+  "Ooh, a picture! Got it — it's right here. Tap 💾 Save picture under it if you want to keep a copy."
+];
+const DEFAULT_QUICK = ["Hey", "Yes", "No", "What are you doing?", "What's new?", "Goodnight", "Love you", "Thank you"];
+function sendChatText(t) { els.chatInput.value = t; sendChat(); }
+function renderQuickChips() {
+  const box = els.quickChips; if (!box) return;
+  box.innerHTML = "";
+  const mk = (label) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = label;
+    b.addEventListener("click", () => sendChatText(label)); return b;
+  };
+  DEFAULT_QUICK.forEach((q) => box.appendChild(mk(q)));
+  (state.quickReplies || []).forEach((q) => {
+    const wrap = document.createElement("span"); wrap.className = "chip-wrap";
+    wrap.appendChild(mk(q));
+    const x = document.createElement("button"); x.type = "button"; x.className = "chip-x"; x.textContent = "×"; x.setAttribute("aria-label", "Remove quick reply " + q);
+    x.addEventListener("click", () => { state.quickReplies = (state.quickReplies || []).filter((v) => v !== q); saveState(); renderQuickChips(); });
+    wrap.appendChild(x); box.appendChild(wrap);
+  });
+}
+els.quickAddBtn.addEventListener("click", () => {
+  const v = (els.quickAddInput.value || "").trim().slice(0, 40);
+  if (!v) { toast("Write a quick reply first."); return; }
+  state.quickReplies = state.quickReplies || [];
+  if (state.quickReplies.indexOf(v) === -1 && DEFAULT_QUICK.indexOf(v) === -1) {
+    if (state.quickReplies.length >= 8) { toast("You have 8 of your own already — remove one first."); return; }
+    state.quickReplies.push(v); saveState();
+  }
+  els.quickAddInput.value = ""; renderQuickChips(); toast("Quick reply added.");
+});
+/* Chat options menu: see-through lives here too, plus her voice on/off,
+   voice speed, and Saved. */
+els.chatMenuBtn.addEventListener("click", () => {
+  const m = els.chatMenu; const open = m.hidden;
+  m.hidden = !open; els.chatMenuBtn.setAttribute("aria-expanded", String(open));
+  if (open) els.savedPanel.hidden = true;
+});
+els.menuVoiceBtn.addEventListener("click", () => { els.speakBtn.click(); });
+els.voiceRateSel.value = String(state.voiceRate || 1);
+els.voiceRateSel.addEventListener("change", () => {
+  state.voiceRate = Number(els.voiceRateSel.value) || 1; saveState();
+  toast("Her voice speed: " + (state.voiceRate === 0.8 ? "slower" : state.voiceRate === 1.2 ? "quicker" : "normal") + ".");
+});
+/* Stop talking: visible only while she is speaking. */
+function refreshStopBtn() { if (els.stopSpeakBtn) els.stopSpeakBtn.hidden = !speaking; }
+els.stopSpeakBtn.addEventListener("click", () => { stopAllVoice(); refreshStopBtn(); toast("Stopped — she'll stay quiet until you talk to her again."); });
+/* Saved messages + pictures. Long-press a bubble to save it; pictures get
+   their own Save button. Everything lives in one Saved area. */
+function saveMessage(idx) {
+  const m = state.chat[idx]; if (!m) return;
+  state.saved = state.saved || [];
+  if (m.img) savePicRecord(m.img, m.name || "chat-photo.jpg", true);
+  state.saved.push({ at: Date.now(), who: m.who, text: (m.text || "").slice(0, 500) || (m.img ? "📷 Photo" : "") });
+  state.saved = state.saved.slice(-50); saveState();
+  toast("Saved — find it under ☆ Saved in Chat options.");
+}
+function savePicRecord(dataUrl, name, quiet) {
+  state.savedPics = state.savedPics || [];
+  if (!state.savedPics.some((p) => p.img === dataUrl)) {
+    state.savedPics.push({ at: Date.now(), name: name || "aimmianna-photo.jpg", img: dataUrl });
+    state.savedPics = state.savedPics.slice(-20); saveState();
+  }
+  if (!quiet) toast("Picture saved — find it under ☆ Saved in Chat options.");
+}
+function downloadDataUrl(dataUrl, name) {
+  const a = document.createElement("a"); a.href = dataUrl; a.download = name || "aimmianna-photo.jpg";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function saveChatPic(idx) {
+  const m = state.chat[idx]; if (!m || !m.img) return;
+  savePicRecord(m.img, m.name || "aimmianna-photo.jpg");
+  downloadDataUrl(m.img, m.name || "aimmianna-photo.jpg");
+}
+window.__chatSave = (i) => saveMessage(i);
+window.__chatSavePic = (i) => saveChatPic(i);
+let lpTimer = null, lpIdx = null;
+els.chatBox.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("button") || e.target.closest("a")) return;
+  const b = e.target.closest(".bubble"); if (!b || b.dataset.idx == null) return;
+  lpIdx = Number(b.dataset.idx);
+  lpTimer = setTimeout(() => { saveMessage(lpIdx); lpTimer = null; }, 650);
+});
+["pointerup", "pointercancel", "pointerleave"].forEach((evn) => els.chatBox.addEventListener(evn, () => { clearTimeout(lpTimer); lpTimer = null; }));
+els.chatBox.addEventListener("pointermove", (e) => {
+  if (lpTimer && (Math.abs(e.movementX || 0) > 8 || Math.abs(e.movementY || 0) > 8)) { clearTimeout(lpTimer); lpTimer = null; }
+});
+function renderSaved() {
+  const box = els.savedList; if (!box) return;
+  box.innerHTML = "";
+  const saved = state.saved || [], pics = state.savedPics || [];
+  if (!saved.length && !pics.length) { box.appendChild(Object.assign(document.createElement("p"), { className: "help", textContent: "Nothing saved yet — press and hold any message to save it, or tap 💾 Save picture under a photo." })); return; }
+  saved.slice().reverse().forEach((m, ri) => {
+    const d = document.createElement("div"); d.className = "saved-item";
+    const meta = document.createElement("div"); meta.className = "muted";
+    meta.textContent = (m.who === "you" ? "You" : "Aimmianna") + " · " + new Date(m.at).toLocaleString();
+    const t = document.createElement("div"); t.textContent = m.text;
+    const row = document.createElement("div"); row.className = "btn-row";
+    const cp = document.createElement("button"); cp.type = "button"; cp.textContent = "Copy";
+    cp.addEventListener("click", () => copyText(m.text, "Copied."));
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Delete";
+    del.addEventListener("click", () => { state.saved = state.saved.filter((x) => x !== m); saveState(); renderSaved(); });
+    row.appendChild(cp); row.appendChild(del);
+    d.appendChild(meta); d.appendChild(t); d.appendChild(row); box.appendChild(d);
+  });
+  pics.slice().reverse().forEach((p) => {
+    const d = document.createElement("div"); d.className = "saved-item";
+    const meta = document.createElement("div"); meta.className = "muted";
+    meta.textContent = "Picture · " + (p.name || "") + " · " + new Date(p.at).toLocaleString();
+    const im = document.createElement("img"); im.src = p.img; im.alt = p.name || "Saved picture";
+    const row = document.createElement("div"); row.className = "btn-row";
+    const dl = document.createElement("button"); dl.type = "button"; dl.textContent = "Download";
+    dl.addEventListener("click", () => downloadDataUrl(p.img, p.name));
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Remove";
+    del.addEventListener("click", () => { state.savedPics = state.savedPics.filter((x) => x !== p); saveState(); renderSaved(); });
+    row.appendChild(dl); row.appendChild(del);
+    d.appendChild(meta); d.appendChild(im); d.appendChild(row); box.appendChild(d);
+  });
+}
+function copyText(text, okMsg) {
+  const done = () => toast(okMsg || "Copied.");
+  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done)); }
+  else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  try { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); done(); }
+  catch (e) { toast("Couldn't copy — select it by hand."); }
+}
+function savedExportText() {
+  const lines = ["Aimmianna — saved messages & pictures", "Exported " + new Date().toLocaleString(), ""];
+  (state.saved || []).forEach((m) => lines.push("[" + new Date(m.at).toLocaleString() + "] " + (m.who === "you" ? "You" : "Aimmianna") + ": " + m.text));
+  if ((state.savedPics || []).length) { lines.push("", "Saved pictures:"); state.savedPics.forEach((p) => lines.push("- " + (p.name || "picture") + " (" + new Date(p.at).toLocaleDateString() + ")")); }
+  return lines.join("\n");
+}
+els.savedOpenBtn.addEventListener("click", () => { els.chatMenu.hidden = true; els.chatMenuBtn.setAttribute("aria-expanded", "false"); els.savedPanel.hidden = false; renderSaved(); });
+els.savedCloseBtn.addEventListener("click", () => { els.savedPanel.hidden = true; });
+els.savedExportBtn.addEventListener("click", () => {
+  const blob = new Blob([savedExportText()], { type: "text/plain" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "aimmianna-saved.txt";
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("Saved list exported as aimmianna-saved.txt.");
+});
+els.savedCopyBtn.addEventListener("click", () => copyText(savedExportText(), "Saved list copied."));
+/* Send a picture: gallery (and camera where the browser offers it). The
+   picture is shrunk before it's kept, so it never bloats her memory.
+   Uses the album's downscaleImage — same shrink, smaller max size. */
+function trimChatImages() {
+  // Keep at most the newest 20 pictures in the chat history, so her saved
+  // data never outgrows the phone's storage. Older ones keep a text note.
+  const withImg = state.chat.map((m, i) => (m.img ? i : -1)).filter((i) => i !== -1);
+  while (withImg.length > 20) {
+    const i = withImg.shift(); const m = state.chat[i];
+    if (m) { delete m.img; if (!m.text) m.text = "📷 Photo"; }
+  }
+}
+els.attachBtn.addEventListener("click", () => {
+  if (!permOn("photos")) { askPerm("photos", "Photos are off — turn on Photos & Files in Permissions if you want to send me pictures."); return; }
+  els.imgPicker.click();
+});
+els.imgPicker.addEventListener("change", async () => {
+  const file = els.imgPicker.files && els.imgPicker.files[0];
+  els.imgPicker.value = "";
+  if (!file) return;
+  if (!permOn("photos")) { askPerm("photos", "Photos are off — turn on Photos & Files in Permissions if you want to send me pictures."); return; }
+  downscaleImage(file, 480, (dataUrl) => {
+    if (!dataUrl) { toast("That picture didn't load — try another one."); return; }
+    state.chat.push({ who: "you", text: "", img: dataUrl, name: file.name || "photo.jpg" });
+    trimChatImages();
+    addBubble("you", "", { img: dataUrl, name: file.name || "photo.jpg", idx: state.chat.length - 1 });
+    saveState(); noteActivity(); gainXP("companion", 1);
+    deliverHerReply(pickOne(PIC_ACKS), "");
+  });
+});
+renderQuickChips();
 
 /* ---------------- TV ---------------- */
 function tvOnAndWatch() {
@@ -2908,6 +3228,9 @@ function refreshBadge() {
   if (world) world.setPhoneBadge(n);
 }
 function addReminder(title, date, time) {
+  // Permissions: reminders need the Calendar & Reminders toggle. If it's
+  // off she asks first in plain words instead of setting it silently.
+  if (!permOn("calendar")) { askPerm("calendar", "Reminders are off — turn on Calendar & Reminders in Permissions if you want me to set those."); return null; }
   const d = /^\d{4}-\d{2}-\d{2}$/.test(date || "") ? date : todayKey();
   const tm = /^\d{1,2}:\d{2}$/.test(time || "") ? time.padStart(5, "0") : "";
   const r = { id: uid(), title: String(title).trim().slice(0, 200), date: d, time: tm, fired: false, done: false, created: Date.now() };
@@ -2936,10 +3259,14 @@ function fireReminder(r) {
   const text = "Reminder: " + r.title;
   addNotification(text, "due");
   toast(text, { label: "Phone", fn: openPhone });
-  speakLine(pickOne(["Hey Tony — reminder: ", "Psst, don't forget: ", "Tony! You told me to remind you: "]) + r.title + ".");
+  // Permissions: the spoken alarm needs the Clock toggle. Off means the
+  // reminder just waits quietly in the list — nothing is lost.
+  if (permOn("devClock")) speakLine(pickOne(["Hey Tony — reminder: ", "Psst, don't forget: ", "Tony! You told me to remind you: "]) + r.title + ".");
   webNotify("Aimmianna", text);
 }
 function webNotify(title, body) {
+  // Permissions: system notifications only if he turned them on.
+  if (!permOn("notifications")) return;
   if (NATIVE && NATIVE.notify) { try { NATIVE.notify(title, body); } catch (e) {} return; }
   try { if ("Notification" in window && Notification.permission === "granted" && document.hidden) new Notification(title, { body, icon: "assets/icon-192.png" }); } catch (e) {}
 }
@@ -3173,7 +3500,8 @@ $("alertsRead").addEventListener("click", () => { state.notifications.forEach((n
 $("remDate").value = todayKey();
 $("remAdd").addEventListener("click", () => {
   const t = $("remTitle").value.trim(); if (!t) { toast("Type what to remind you about."); return; }
-  addReminder(t, $("remDate").value, $("remTime").value);
+  const r = addReminder(t, $("remDate").value, $("remTime").value);
+  if (!r) return;
   $("remTitle").value = ""; $("remTime").value = "";
   toast("Reminder saved — she'll ping you.");
 });
@@ -4035,7 +4363,7 @@ function refreshYardStatus() {
     const day = h >= 7 && h < 17, dusk = h >= 17 && h < 19;
     const wx = state.yardWeather || "auto";
     const wxLabel = wx === "rain" ? "rain falling" : wx === "cloudy" ? "cloudy" : wx === "clear" ? "sunny" : day ? "sunny" : dusk ? "dusk" : "night";
-    y.textContent = "The yard: " + wxLabel + " out there" + (day ? ", daytime" : dusk ? ", dusk" : ", night") + ". Petals on the sakura, koi in the pond.";
+    y.textContent = "The yard: " + wxLabel + " out there" + (day ? ", daytime" : dusk ? ", dusk" : ", night") + ". Petals on the sakura, koi in the pond." + (state.yardLat ? " Daylight follows your real sunrise and sunset." : "");
   }
   const yh = $("yardHerbs"); if (yh) {
     const herbs = (state.ritual && state.ritual.herbs) || {};
@@ -4072,6 +4400,18 @@ $("yardWxAuto")?.addEventListener("click", () => setYardWeather("auto"));
 $("yardWxClear")?.addEventListener("click", () => setYardWeather("clear"));
 $("yardWxCloudy")?.addEventListener("click", () => setYardWeather("cloudy"));
 $("yardWxRain")?.addEventListener("click", () => setYardWeather("rain"));
+$("yardLocBtn")?.addEventListener("click", () => {
+  // Permissions: location is only read when he taps this, never on load.
+  if (!permOn("location")) { askPerm("location", "Location is off — turn on Location in Permissions if you want the yard light to follow your real sunrise and sunset."); return; }
+  if (!navigator.geolocation) { toast("This device doesn't offer location here."); return; }
+  toast("Reading your location for the yard sky…");
+  navigator.geolocation.getCurrentPosition((pos) => {
+    state.yardLat = pos.coords.latitude; saveState();
+    if (world && world.setLatitude) world.setLatitude(state.yardLat);
+    refreshYardStatus();
+    toast("Yard daylight set from your location — the sky now follows your real sunrise and sunset.");
+  }, () => { toast("Couldn't get your location — check the browser's location setting."); }, { timeout: 8000 });
+});
 
 /* ================= the 3D world ================= */
 const TAP_LINES = {
@@ -4091,10 +4431,16 @@ function onWorldTap(name, info) {
     case "her": openPanel("chatSection"); world.setTalking(true); setTimeout(() => { if (!speaking) world.setTalking(false); }, 900); return;
     case "floor": if (info && info.point) { holdRoutine(120000); world.goToPoint(info.point.x, info.point.z); setStatus("walking over", 2500); } return;
     case "bed": holdRoutine(300000); world.goToSpot("bed"); toast("She flops onto the bed.", { label: "Bedtime", fn: () => openPanel("bedSection") }); return;
-    case "nightstand": case "phone": openPhone(); return;
+    case "nightstand": case "phone": {
+      if (!permOn("devPhone")) { askPerm("devPhone", "The phone on my desk is off in Permissions — turn on Phone if you want me to use it for messages and calls."); return; }
+      openPhone(); return;
+    }
     case "vanity": holdRoutine(120000); world.goToSpot("vanity"); openPanel("wardrobeSection"); return;
     case "sink": holdRoutine(120000); world.goToSpot("sink"); openPanel("careSection"); return;
-    case "pc": holdRoutine(180000); world.goToSpot("pc"); openPanel("chatSection"); return;
+    case "pc": {
+      if (!permOn("devComputer")) { askPerm("devComputer", "The computer is off in Permissions — turn on Computer if you want me to use it for calendar and notes."); return; }
+      holdRoutine(180000); world.goToSpot("pc"); openPanel("chatSection"); return;
+    }
     case "album": holdRoutine(120000); world.goToSpot("couch"); openPanel("albumSection"); return;
     case "tv": if (media.ytPlaying()) { media.setTvMode("pip"); openPanel("tvSection"); return; } if (!world.tvOn()) { tvOnAndWatch(); toast("TV on — she's heading to the couch.", { label: "Controls", fn: () => openPanel("tvSection") }); } else openPanel("tvSection"); return;
     case "stereo": if (music.playing()) { music.stop(); toast("Music off."); } else { music.play(); toast("Now playing: " + music.label(), { label: "Stereo", fn: () => openPanel("stereoSection") }); } return;
@@ -4113,18 +4459,19 @@ function onWorldTap(name, info) {
     case "sakura": holdRoutine(180000); world.goToSpot("sakura"); speakLine(pickOne(["Under the sakura with you — petals falling and everything. This is the pretty corner.", "The blossoms are out. Sit with me under them? It's so calm here."]), { quietIfRecent: true }); return;
     case "hammock": holdRoutine(300000); world.goToSpot("hammock"); speakLine(pickOne(["Hammock time. Scoot over — there's room for both of us, don't be shy.", "Ahh, swaying in the hammock under the sakura. This is the life, Tony."]), { quietIfRecent: true }); return;
     case "bamboo": holdRoutine(120000); world.goToSpot("bamboo"); speakLine(pickOne(["The bamboo's swaying. Listen — it sounds like rain, but softer.", "Bamboo grove. It's the quietest spot in the whole yard. I love it here."]), { quietIfRecent: true }); return;
-    /* --- ritual room (2.4.7) --- */
-    case "altar": holdRoutine(120000); world.goToSpot("altar"); openPanel("ritualSection"); return;
-    case "candle": ritual.lightCandle(); return;
+    /* --- ritual room (2.4.7, deepened 2.4.8) --- */
+    case "altar": holdRoutine(120000); world.goToSpot("altar"); openPanel("ritualSection"); speakLine(pickOne(["The altar's all ours. Candles, ball, bowls — everything here does something, Tony.", "Ritual room. Our witch corner. What are we working on tonight?"]), { quietIfRecent: true }); return;
+    case "candle": ritual.lightCandle(info && info.index != null ? info.index : undefined); return;
     case "incense": ritual.toggleIncense(); return;
     case "crystalball": ritual.crystalBall(); return;
-    case "crystals": ritual.pickCrystal(); return;
+    case "crystals": ritual.pickCrystal(info && info.index != null ? info.index : undefined); return;
     case "wand": ritual.waveWand(); return;
     case "bowls": ritual.showBowls(); openPanel("ritualSection"); return;
     case "scrying": ritual.scry(); return;
     case "staff": ritual.takeStaff(); return;
     case "ritual_mirror": ritual.mirrorVision(); return;
     case "ritual_rug": ritual.sitRug(); return;
+    case "ritual_skull": ritual.skullRemark(); return;
   }
   if (name.indexOf("lamp:") === 0) { const room = name.slice(5); const m = world.lamp(room); sfx.click(); toast(ROOMS[room].label + " lamp: " + m); return; }
   if (name.indexOf("poster:") === 0) { speakLine(pickOne(TAP_LINES[name] || TAP_LINES["poster:peep"]), { quietIfRecent: true }); return; }
@@ -4543,8 +4890,20 @@ function renderRoutines() {
         "<b>What I already did:</b><ul>" + (idea.sheDoes || []).map((s) => "<li>" + esc(s) + "</li>").join("") + "</ul>" +
         "<b>Your part:</b> " + esc(idea.youDo || "") +
         "<p class='muted'>Real money, real payouts — not game cash or points. I can't promise how much; it depends on people actually buying. The platform takes the payment and delivers it — you never touch money or stock.</p>" +
-        "<div class='btn-row'><button type='button' data-test-lab>Test it in Project Lab</button><button type='button' data-work-with>Work on this with me</button></div></div>";
-      ideaBox.querySelectorAll("[data-test-lab]").forEach((b) => b.addEventListener("click", () => openPanel("lifeSection")));
+        "<div class='btn-row'><button type='button' data-test-lab>Test it in Project Lab</button><button type='button' data-work-with>Work on this with me</button></div></div>" +
+        ((state.devIdeas || []).length > 1 ? "<h4>Past income ideas</h4>" + (state.devIdeas || []).slice(1).map((p, i) => "<div class='routine-row'><span>💡 " + esc(p.title) + "</span><span class='muted'>" + esc(p.kind || "") + " <button type='button' data-past-idea='" + (i + 1) + "'>View</button></span></div>").join("") : "");
+      ideaBox.querySelectorAll("[data-test-lab]").forEach((b) => b.addEventListener("click", () => {
+        // Carry the idea into Project Lab's planner — it stays saved here too.
+        pendingLabIdea = idea;
+        openPanel("lifeSection");
+        if (lifeSim && lifeSim.prefillLabFromIdea) { lifeSim.prefillLabFromIdea(idea); pendingLabIdea = null; }
+      }));
+      ideaBox.querySelectorAll("[data-past-idea]").forEach((b) => b.addEventListener("click", () => {
+        const idx = Number(b.dataset.pastIdea);
+        const chosen = (state.devIdeas || [])[idx]; if (!chosen) return;
+        state.devIdeas = [chosen].concat(state.devIdeas.filter((_, j) => j !== idx));
+        saveState(); renderRoutines();
+      }));
       ideaBox.querySelectorAll("[data-work-with]").forEach((b) => b.addEventListener("click", () => {
         // She comes to the PC and works on it with him — not a menu, she's in it.
         holdRoutine(300000);
@@ -4650,13 +5009,15 @@ async function startLifeSim() {
             return { ok: false, message: "Choose a future date and time." };
           if (state.reminders.some((r) => !r.done && r.title === title && r.date === date && r.time === time))
             return { ok: false, message: "That reminder is already set." };
-          addReminder(title, date, time);
+          if (!addReminder(title, date, time))
+            return { ok: false, message: "Reminders are off — turn on Calendar & Reminders in Permissions." };
           saveNow();
           return { ok: true, message: `${title} on ${prettyDate(date)} at ${fmtHM(time)}` };
         },
       });
     }
     lifeSim.enter();
+    if (pendingLabIdea && lifeSim.prefillLabFromIdea) { lifeSim.prefillLabFromIdea(pendingLabIdea); pendingLabIdea = null; }
     if (PARAMS.get("lifeQA") === "1") window.render_game_to_text = () => JSON.stringify(lifeSim.liveStatus());
     status.textContent = "";
   } catch (error) {
@@ -4687,6 +5048,7 @@ function initWorld() {
   els.roomLabel.textContent = ROOMS[world.getHer().room].label;
   if (state.led) world.led(state.led);
   if (state.yardWeather && world.setWeather) world.setWeather(state.yardWeather);
+  if (state.yardLat && world.setLatitude) world.setLatitude(state.yardLat);
   markYardWx(state.yardWeather || "auto"); refreshYardStatus();
   if (h >= 22 || h < 6) world.lamp("all", "purple");
   if (state.lowPower && world.setLowPower) world.setLowPower(true);
@@ -4721,7 +5083,9 @@ async function enterHome(withGyro) {
   }, 900);
   setTimeout(() => morningBriefing(false), greeted ? 9000 : 2500);
   setTimeout(() => { if (Date.now() - (state.lastUpdateCheck || 0) > 864e5) checkUpdates(false); }, 15000);
-  if ("Notification" in window && !NATIVE && Notification.permission === "default" && state.reminders.length) { try { Notification.requestPermission(); } catch (e) {} }
+  // Permissions: only ever ask the browser for notification permission if
+  // he turned Notifications on in Settings.
+  if (permOn("notifications") && "Notification" in window && !NATIVE && Notification.permission === "default" && state.reminders.length) { try { Notification.requestPermission(); } catch (e) {} }
 }
 $("enterGyro").addEventListener("click", () => enterHome(true));
 $("enterPlain").addEventListener("click", () => enterHome(false));
@@ -4754,7 +5118,7 @@ async function init() {
   if (oauth) { openPanel("settingsSection"); }
   await loadSayings();
   applyFigure(); markPickedButtons(); renderChat();
-  refreshSpeakBtn(); refreshGreetingBtn(); refreshAiStatus(); refreshTypecastStatus(); refreshFishStatus(); refreshElevenStatus(); refreshNeuralStatus();
+  refreshSpeakBtn(); refreshGreetingBtn(); refreshChatClear(); refreshAiStatus(); refreshTypecastStatus(); refreshFishStatus(); refreshElevenStatus(); refreshNeuralStatus();
   refreshHomeStatus(); renderNotes(); renderAlbum(); renderCalendar(); renderPhone(); refreshBadge();
   tickIdle();
   $("appVersion").textContent = VERSION + " — keys live on this device only. Nothing is ever hardcoded.";

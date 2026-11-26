@@ -12,6 +12,24 @@ export const OUTFITS = {
   formal: { name: "Garnet evening suit", color: 0x743143, pants: 0x22181d, cost: 165, cut: 1, needs: ["bond", 3] },
   frost: { name: "Frost utility coat", color: 0x466578, pants: 0x273442, cost: 245, cut: 2, needs: ["tech", 3] },
 };
+/* Tony's own wardrobe, for his Tripo 3D figure. His model is one mesh with
+   one texture, so a hoodie colour is a tint that washes over the whole
+   figure (tint) — the solid colour is what the built-in figure wears.
+   Chains are real 3D pieces hung on the figure. Pants and boots are baked
+   into his model and need a new export to change on their own. */
+export const TONY_HOODIES = [
+  { id: "black", label: "Black skull hoodie", tint: 0xffffff, solid: 0x1a1a1f },
+  { id: "red", label: "Blood red skull hoodie", tint: 0xd8a0a0, solid: 0x6e2b2b },
+  { id: "violet", label: "Deep violet skull hoodie", tint: 0xa8a0d8, solid: 0x4a2d6e },
+  { id: "blue", label: "Midnight blue skull hoodie", tint: 0x90a8d8, solid: 0x2b3a6e },
+  { id: "green", label: "Forest skull hoodie", tint: 0x9ac8a0, solid: 0x2b4a34 },
+];
+export const TONY_CHAINS = [
+  { id: "none", label: "No chain" },
+  { id: "chain", label: "Silver chain" },
+  { id: "cross", label: "Gothic cross necklace" },
+  { id: "both", label: "Chain + cross necklace" },
+];
 export const UPGRADES = {
   lamp: { name: "Amber floor lamp", cost: 75, note: "Adds a warm pool of light to the lounge." },
   rug: { name: "Garnet lounge rug", cost: 110, note: "Adds a garnet rug beside the seating area." },
@@ -50,7 +68,7 @@ export function freshLife() {
   return {
     version: 1, player: { name: "Me", skin: 2, hair: 0, style: 0 }, cash: 0, bond: 0,
     xp: Object.fromEntries(Object.keys(SKILLS).map((key) => [key, 0])),
-    owned: ["dusk"], outfit: "dusk", upgrades: [], jobs: 0, moments: 0, movieNights: 0, lastNight: "", notes: [],
+    owned: ["dusk"], outfit: "dusk", tonyStyle: { hoodie: "black", chain: "none" }, upgrades: [], jobs: 0, moments: 0, movieNights: 0, lastNight: "", notes: [],
     lessons: 0, lastLesson: "", lastLessonTitle: "", takeaways: [], lastRealMoment: "", reflections: [],
     dinners: 0, routineLog: [], stories: {}, yardShifts: 0, lastYardShift: "", projects: [],
     jar: 0, savingsGoal: 0, paidProjects: [], marketItems: {}, labDone: [], labPlans: [], creatorNotes: {}, skit: cleanSkit(null),
@@ -67,6 +85,11 @@ export function loadLife(raw) {
     for (const key of Object.keys(SKILLS)) out.xp[key] = safeCount(src.xp?.[key]);
     out.owned = [...new Set(["dusk", ...pickKeys(src.owned, OUTFITS)])];
     out.outfit = out.owned.includes(src.outfit) ? src.outfit : "dusk";
+    const ts = src.tonyStyle || {};
+    out.tonyStyle = {
+      hoodie: TONY_HOODIES.some((h) => h.id === ts.hoodie) ? ts.hoodie : "black",
+      chain: TONY_CHAINS.some((c) => c.id === ts.chain) ? ts.chain : "none",
+    };
     out.upgrades = pickKeys(src.upgrades, UPGRADES);
     out.lastNight = typeof src.lastNight === "string" ? src.lastNight.slice(0, 16) : "";
     out.notes = Array.isArray(src.notes) ? src.notes.filter((x) => typeof x === "string").slice(0, 8).map((x) => x.slice(0, 170)) : [];
