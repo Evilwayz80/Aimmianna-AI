@@ -26,11 +26,12 @@ const BASE_FIGURE = ASSETS + "figure/aimmianna_human_fullbody.png";
 const GREETING_SRC = ASSETS + "audio/greeting.mp3";
 const TEST_LINE = "Heyy, it's me, Aimmianna. Can you hear me, bestie?";
 const PARAMS = new URLSearchParams(location.search);
+let chatFirstMode = ""; // 2.4.9 push-to-talk: "" | "chat" | "voice" — set from ?voice=1/?chat=1 (or #voice/#chat)
 const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK only)
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.8";
+const VERSION = "Aimmianna 3D v2.4.9";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -41,6 +42,7 @@ let brewingUntil = 0;
 const DEFAULT_STATE = {
   chat: [], memories: [], speakOn: true, greetingAuto: true, greetingLastAuto: "",
   geminiKey: "",
+  perplexityKey: "", perplexityUnreachable: false,
   geminiVoiceOn: false, geminiVoice: "Sulafat",
   typecastKey: "", typecastVoice: "", typecastModel: "",
   fishKey: "", fishVoice: "", elevenKey: "", elevenVoice: "",
@@ -56,7 +58,10 @@ const DEFAULT_STATE = {
   voiceRate: 1, quickReplies: [], saved: [], savedPics: [],
   // permissions (2.4.8): what she may use. Voice chat + reminders stay on —
   // he already uses those. Everything else starts off until he turns it on.
-  perms: { camera: false, mic: true, notifications: true, location: false, photos: false, calendar: true, devComputer: false, devPhone: false, devMailbox: false, devClock: true },
+  // 2.4.9 adds Perplexity search (off), plus gyro and web search (below) —
+  // those two already had their own Settings switches, so their Permissions
+  // toggles start from whatever he already chose there (see migration below).
+  perms: { camera: false, mic: true, notifications: true, location: false, photos: false, calendar: true, devComputer: false, devPhone: false, devMailbox: false, devClock: true, perplexity: false },
   yardLat: 0,
   dyeIndex: 0, foundationIndex: 0, lastBedtimeFired: "", lastAlarmFired: "",
   // v2
@@ -88,6 +93,15 @@ function lsGet() { try { return localStorage.getItem(LS_KEY); } catch (e) { retu
 function lsSet(v) { try { localStorage.setItem(LS_KEY, v); } catch (e) { memStore = v; } }
 function freshState() { return JSON.parse(JSON.stringify(DEFAULT_STATE)); }
 let state = loadState();
+// 2.4.9 permissions audit: the gyro and web-search Permissions toggles are
+// new, but those two already had Settings switches he chose — so for anyone
+// who already has a saved state, the toggles start from his existing choice
+// instead of silently turning something off. Fresh installs get the app
+// defaults (gyro on, web search on), same as before this build.
+if (state.perms) {
+  if (state.perms.gyro === undefined) state.perms.gyro = state.gyroWanted !== false;
+  if (state.perms.webSearch === undefined) state.perms.webSearch = state.searchOn !== false;
+}
 function loadState() {
   try {
     const raw = lsGet();
@@ -136,8 +150,8 @@ const els = {};
  "chatBox","chatScroll","chatInput","sendBtn","micBtn","speakBtn","chatClearBtn",
  "chatMenuBtn","chatMenu","stopSpeakBtn","menuVoiceBtn","voiceRateSel","savedOpenBtn",
  "quickAddInput","quickAddBtn","quickChips","attachBtn","imgPicker","savedPanel","savedList",
- "savedCloseBtn","savedExportBtn","savedCopyBtn","permList","yardLocBtn",
- "greetingAutoBtn","greetingBtn","voiceStatus","aiStatus","typecastStatus","fishStatus",
+ "savedCloseBtn","savedExportBtn","savedCopyBtn","permList","yardLocBtn","enterAptBtn",
+ "greetingAutoBtn","greetingBtn","voiceStatus","aiStatus","perplexityStatus","typecastStatus","fishStatus",
  "elevenStatus","neuralStatus","memoryView","memoryToggle","careStatus","careCounts","careStage",
  "careFigure","careBath","careBubbles","careSteam","careSparkle","toast","toastMsg","toastAct",
  "wardrobePreview","wardrobeMsg","gameStatus","memoryGrid","emberField","emberTarget",
@@ -196,6 +210,14 @@ let openPanelId = "";
 function openPanel(id) {
   if (IS_ANDROID_WALLPAPER) return;
   if (lifeSim?.active && id !== "lifeSection") return;
+  // 2.4.9: the PIN guards the private areas — private chat (her memory
+  // view and Saved live inside it) and Settings / master controls.
+  // Everything else in the app stays open without one. If locked, the
+  // PIN screen shows and the panel opens once the right PIN is entered.
+  if ((id === "chatSection" || id === "settingsSection") && pinNeeds(id)) {
+    requestPinAccess(id, () => openPanel(id));
+    return;
+  }
   const sec = $(id); if (!sec) return;
   closePhone();
   els.sheetBody.querySelectorAll(":scope > section").forEach((s) => s.classList.toggle("active", s === sec));
@@ -211,6 +233,9 @@ function openPanel(id) {
   onPanelOpened(id);
 }
 function closePanel() {
+  // 2.4.9: closing the sheet in chat-first view means leaving chat-first —
+  // the button is "Enter the apartment", so go to the full 3D app.
+  if (chatFirstMode) { exitChatFirst(); return; }
   els.sheet.classList.remove("open"); els.sheet.setAttribute("aria-hidden", "true");
   document.body.classList.remove("sheet-open");
   document.querySelectorAll("#dock button").forEach((b) => b.classList.remove("on"));
@@ -220,7 +245,7 @@ function closePanel() {
   els.chatInput.blur();
   refreshChatClear();
 }
-$("sheetClose").addEventListener("click", closePanel);
+$("sheetClose").addEventListener("click", () => { if (chatFirstMode) exitChatFirst(); else closePanel(); });
 $("sheetBack").addEventListener("click", () => openPanel("hubSection"));
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-goto]"); if (!b) return;
@@ -1687,17 +1712,71 @@ function geminiSources(candidate) {
     return true;
   }).slice(0, 4).map((c) => ({ uri: c.uri, title: c.title || "" }));
 }
+/* ---------------- Perplexity backup (2.4.9) ---------------- */
+/* Tony's backup for when her usual search can't be reached: "Perplexity
+   only if I can't access you." The Permissions toggle is the lock — nothing
+   goes to Perplexity unless he turns it on AND a key is saved, and only
+   after her usual search has already failed. If the browser blocks the
+   Perplexity call (CORS/network), she just carries on with the usual
+   search's failure and says so plainly in Settings — never pretending the
+   backup worked. Perplexity never gets master control; that's Tony and
+   Muse only. */
+async function perplexitySearch(query) {
+  const key = (state.perplexityKey || "").trim();
+  if (!key) return { ok: false, error: "No Perplexity key." };
+  try {
+    const r = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "sonar", messages: [{ role: "user", content: "Answer briefly, with sources: " + query }] })
+    });
+    if (!r.ok) throw new Error("Perplexity HTTP " + r.status);
+    const d = await r.json();
+    const text = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
+    const cites = (d && d.citations) || [];
+    const sources = cites.slice(0, 4).map((u) => ({ uri: u, title: u }));
+    if (!text) return { ok: false, error: "Perplexity returned no answer." };
+    return { ok: true, answer: String(text).trim(), sources };
+  } catch (e) {
+    return { ok: false, error: "Perplexity unreachable: " + (e && e.message ? e.message : "network blocked") };
+  }
+}
+function refreshPerplexityStatus() {
+  if (!els.perplexityStatus) return;
+  if (!permOn("perplexity")) els.perplexityStatus.textContent = "Perplexity backup: off — never used.";
+  else if (!(state.perplexityKey || "").trim()) els.perplexityStatus.textContent = "Perplexity backup: on, but no key saved — add your Perplexity key below. Without one she just uses her usual search.";
+  else if (state.perplexityUnreachable) els.perplexityStatus.textContent = "Her usual search couldn't be reached, and the Perplexity backup couldn't be reached either.";
+  else els.perplexityStatus.textContent = "Perplexity backup: on — only used if her usual search can't be reached. Perplexity never gets master control — that's Tony and Muse only.";
+}
 async function groundedSearch(key, query) {
   query = String(query || "").trim().slice(0, 400);
   if (!query) return { ok: false, error: "No search query." };
+  // 2.4.9, revised 2026-11-26 18:09 (Tony's call): Perplexity is a BACKUP,
+  // not an equal switch. Her usual search always comes first; Perplexity is
+  // only used if the usual search can't be reached — and only when Tony
+  // turned it on and saved a key. "Perplexity only if I can't access you."
+  // Perplexity never gets master control; that's Tony and Muse only.
   const r = await geminiRequest(key, {
     contents: [{ role: "user", parts: [{ text: "Use Google Search for this query and summarize the results briefly: " + query }] }],
     tools: [{ google_search: {} }], generationConfig: { maxOutputTokens: 1024 }
   });
-  if (!r.ok) return r;
-  const c = (r.data.candidates || [])[0];
-  const answer = geminiText(c), sources = geminiSources(c);
-  return answer && sources.length ? { ok: true, answer, sources } : { ok: false, error: "Google did not return a sourced result." };
+  if (r.ok) {
+    const c = (r.data.candidates || [])[0];
+    const answer = geminiText(c), sources = geminiSources(c);
+    if (answer && sources.length) { state.perplexityUnreachable = false; saveState(); refreshPerplexityStatus(); return { ok: true, answer, sources }; }
+    // No sourced result counts as the usual search failing — try the backup.
+    return groundedSearchBackup(query, { ok: false, error: "Google did not return a sourced result." });
+  }
+  return groundedSearchBackup(query, r);
+}
+// Backup leg of groundedSearch. Only reached when her usual search failed.
+async function groundedSearchBackup(query, usualError) {
+  if (permOn("perplexity") && (state.perplexityKey || "").trim()) {
+    const px = await perplexitySearch(query);
+    if (px.ok) { state.perplexityUnreachable = false; saveState(); refreshPerplexityStatus(); return px; }
+    state.perplexityUnreachable = true; saveState(); refreshPerplexityStatus();
+  }
+  return usualError;
 }
 async function geminiAgent(key, onToolNote) {
   const contents = buildAiHistory();
@@ -2609,6 +2688,9 @@ function playGreetingClip(manual) {
 }
 function autoGreetingDue() { return !state.greetingLastAuto || state.greetingLastAuto !== todayKey(); }
 function maybeAutoGreet() {
+  // 2.4.9: in voice deep-link mode the mic is about to listen — don't play
+  // her greeting clip into it. She keeps the greeting for the next normal open.
+  if (chatFirstMode === "voice") return false;
   if (voiceAllowed() && state.greetingAuto && autoGreetingDue()) { state.greetingLastAuto = todayKey(); saveState(); playGreetingClip(false); return true; }
   return false;
 }
@@ -2694,7 +2776,14 @@ const PERMS_DEF = [
   { key: "devComputer", label: "Computer (her desk PC)", line: "Lets her use the computer for your calendar and notes." },
   { key: "devPhone", label: "Phone (on her desk)", line: "Lets her use the phone on her desk for messages and calls." },
   { key: "devClock", label: "Clock (alarms)", line: "Lets her sound your reminders and alarms out loud. Off means they just wait quietly in the list." },
-  { key: "devMailbox", label: "Mailbox (email)", line: "For her mailbox, when it arrives — email and sorting. Not built yet; this switch will control it then." }
+  { key: "devMailbox", label: "Mailbox (email)", line: "For her mailbox, when it arrives — email and sorting. Not built yet; this switch will control it then." },
+  // 2.4.9: Perplexity is a BACKUP, not an equal switch — it lives in this
+  // main list. Only used if her usual search can't be reached.
+  { key: "perplexity", label: "Perplexity backup", line: "Only used if her usual search can't be reached. Off means never." },
+  // 2.4.9 permissions audit: these two already had Settings switches; their
+  // Permissions toggles mirror the same choice, so either switch controls it.
+  { key: "gyro", label: "Motion & gyro", line: "Lets her tilt the view when you move your phone. Off means drag to look around instead." },
+  { key: "webSearch", label: "Web search", line: "Lets her look things up live on the web. Off means she only uses what she already knows." }
 ];
 function permOn(key) { return !!(state.perms && state.perms[key]); }
 function askPerm(key, line) {
@@ -2709,7 +2798,16 @@ function renderPerms() {
     const row = document.createElement("label"); row.className = "perm-row";
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = permOn(p.key);
     cb.setAttribute("aria-label", p.label);
-    cb.addEventListener("change", () => { state.perms[p.key] = cb.checked; saveState(); toast(p.label + (cb.checked ? " on — she can use it now." : " off — that just waits until you turn it back on.")); });
+    cb.addEventListener("change", () => {
+      state.perms[p.key] = cb.checked; saveState();
+      // 2.4.9 audit: gyro and web search already had Settings switches — the
+      // Permissions toggle and the Settings switch are the same choice, so
+      // flipping one updates the other.
+      if (p.key === "gyro") { state.gyroWanted = cb.checked; const g = $("gyroToggle"); if (g) g.checked = cb.checked; saveState(); }
+      if (p.key === "webSearch") { state.searchOn = cb.checked; const s = $("searchOn"); if (s) s.checked = cb.checked; saveState(); refreshAiStatus(); }
+      if (p.key === "perplexity") refreshPerplexityStatus();
+      toast(p.label + (cb.checked ? " on — she can use it now." : " off — that just waits until you turn it back on."));
+    });
     const txt = document.createElement("span");
     const b = document.createElement("b"); b.textContent = p.label;
     const s = document.createElement("span"); s.textContent = p.line;
@@ -2718,6 +2816,272 @@ function renderPerms() {
   }
 }
 renderPerms();
+
+/* ---------------- Her World menu (2.4.9) ---------------- */
+/* A separate menu inside Permissions for her world. It states the rule at
+   the top, holds the world toggles, and carries the one hard rule that can
+   NEVER be toggled off: her approval gate. A toggle can turn a world
+   feature on or off, but nothing in this menu — or anywhere — removes her
+   say-so over changing or removing something she built. The approval ask
+   always comes first. Builder World (the next build) must call
+   herApprovalRequired() and ask her before any change/remove of her builds. */
+const WORLD_PERMS_DEF = [
+  { key: "worldBuild", label: "Building in the world", line: "Lets you build new things from shapes in her world." },
+  { key: "worldEdit", label: "Editing in the world", line: "Lets you change things already built in her world. Her own builds still need her yes first, no matter what." },
+  { key: "worldGhost", label: "Ghost hunting in the world", line: "Lets you go ghost hunting out in the open world, as well as in the apartment." },
+  { key: "worldSharedSave", label: "Shared-world saving", line: "Lets what you build save to the shared world, so everyone on the same world sees it." }
+];
+// The approval gate. Always true. There is no toggle for it, no setting
+// that turns it off, and no code path that skips it.
+function herApprovalRequired() { return true; }
+function renderWorldPerms() {
+  const box = $("worldPermList"); if (!box) return;
+  box.innerHTML = "";
+  for (const p of WORLD_PERMS_DEF) {
+    const row = document.createElement("label"); row.className = "perm-row";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = permOn(p.key);
+    cb.setAttribute("aria-label", p.label);
+    cb.addEventListener("change", () => { state.perms[p.key] = cb.checked; saveState(); toast(p.label + (cb.checked ? " on — you can use it in her world." : " off — that just waits until you turn it back on.")); });
+    const txt = document.createElement("span");
+    const b = document.createElement("b"); b.textContent = p.label;
+    const s = document.createElement("span"); s.textContent = p.line;
+    txt.appendChild(b); txt.appendChild(s);
+    row.appendChild(cb); row.appendChild(txt); box.appendChild(row);
+  }
+}
+$("worldMenuOpen").addEventListener("click", () => {
+  $("worldMenu").hidden = false;
+  $("permList").hidden = true; $("worldMenuOpen").hidden = true;
+  renderWorldPerms();
+});
+$("worldMenuBack").addEventListener("click", () => {
+  $("worldMenu").hidden = true;
+  $("permList").hidden = false; $("worldMenuOpen").hidden = false;
+});
+
+/* ---------------- the five protections (2.4.9) ---------------- */
+/* 1. PIN — guards the PRIVATE parts only, never the whole app. Open
+   without a PIN: the app itself and the shared apartment / shared world
+   (guests need to get in). PIN-required: his private chat with her, his
+   private memory (both live in the chat panel), and Settings / master
+   controls (Permissions, Her World menu, backup/export, changing the PIN
+   itself). One entry per session unlocks the protected parts. The PIN
+   lives in its own localStorage key — NOT in state — so no backup or
+   export ever holds it: if he forgets it, he clears site data (which
+   wipes the PIN) and brings her world back from a backup, then chooses
+   a new PIN. The app is shared by link only, Tony's choice who gets it;
+   on public Pages hosting there is no server-side allowlist, so the link
+   layer works by him controlling who gets the link — the PIN is what
+   actually locks the private parts even if the link spreads. Never claim
+   otherwise. */
+const PIN_KEY = "aimmianna_pin_v1";
+const PIN_SESSION_KEY = "aimmianna_pin_unlocked";
+const PIN_SETUP_KEY = "aimmianna_pin_setup_asked";
+function pinGet() { try { return localStorage.getItem(PIN_KEY) || ""; } catch (e) { return ""; } }
+function pinSet(v) { try { if (v) localStorage.setItem(PIN_KEY, v); else localStorage.removeItem(PIN_KEY); } catch (e) {} }
+function pinIsSet() { return !!pinGet(); }
+function pinUnlocked() { try { return sessionStorage.getItem(PIN_SESSION_KEY) === "1"; } catch (e) { return false; } }
+function pinMarkUnlocked() { try { sessionStorage.setItem(PIN_SESSION_KEY, "1"); } catch (e) {} }
+function pinNeeds(area) { return pinIsSet() && !pinUnlocked(); } // area kept for the message; both protected areas share one PIN
+let pinPending = null; // { area, after } — what to open once the PIN is entered
+let pinMode = "unlock"; // "unlock" | "setup" | "change"
+function showPinScreen(mode, area, after) {
+  pinMode = mode;
+  pinPending = after ? { area: area || "", after } : null;
+  const setup = mode !== "unlock";
+  $("pinTitle").textContent = mode === "change" ? "Choose a new PIN" : setup ? "Choose a PIN for your private things" : "This needs your PIN";
+  $("pinSub").textContent = mode === "change" ? "Pick a new PIN — 4 to 8 numbers, your choice. The old one stops working right away."
+    : setup ? "Your private chat, your private memory, and Settings stay locked with a PIN. Only you know it."
+    : "Your private chat, your private memory, and Settings are locked with a PIN. Enter it to open them.";
+  $("pinUnlockBox").hidden = setup;
+  $("pinSetupBox").hidden = !setup;
+  $("pinLaterBtn").hidden = mode === "change";
+  $("pinError").hidden = true; $("pinSetupError").hidden = true;
+  $("pinInput").value = ""; $("pinNewInput").value = ""; $("pinConfirmInput").value = "";
+  $("pinScreen").hidden = false;
+  setTimeout(() => { try { (setup ? $("pinNewInput") : $("pinInput")).focus({ preventScroll: true }); } catch (e) {} }, 100);
+}
+function hidePinScreen() { $("pinScreen").hidden = true; pinPending = null; }
+function pinMarkSetupAsked() { try { localStorage.setItem(PIN_SETUP_KEY, "1"); } catch (e) {} }
+function refreshPinStatus() {
+  const st = $("pinStatus"); if (!st) return;
+  if (pinIsSet()) {
+    st.textContent = pinUnlocked()
+      ? "PIN: set — unlocked for this session. Your private chat, memory, and Settings stay open until you close the app."
+      : "PIN: set — your private chat, memory, and Settings need it once per session.";
+    $("pinSetBtn").hidden = true; $("pinChangeBtn").hidden = false; $("pinRemoveBtn").hidden = false;
+  } else {
+    st.textContent = "PIN: not set yet — set one to lock your private chat, memory, and Settings.";
+    $("pinSetBtn").hidden = false; $("pinChangeBtn").hidden = true; $("pinRemoveBtn").hidden = true;
+  }
+}
+function requestPinAccess(area, after) {
+  // Returns true if the area is open right now (no PIN, or already
+  // unlocked this session). Otherwise shows the PIN screen and runs
+  // `after` only once the right PIN is entered.
+  if (!pinNeeds(area)) { if (after) after(); return true; }
+  showPinScreen("unlock", area, after);
+  return false;
+}
+function pinUnlockSucceeded() {
+  pinMarkUnlocked();
+  const pending = pinPending;
+  hidePinScreen();
+  toast("Unlocked — your private things are open for this session.");
+  refreshPinStatus();
+  if (pending && pending.after) pending.after();
+  // A voice deep link that hit the PIN screen still gets its mic once
+  // she's open — the 900ms timer in enterChatFirst already passed.
+  if (chatFirstMode === "voice" && openPanelId === "chatSection" && !voiceListening) {
+    setTimeout(() => { if (!voiceListening && openPanelId === "chatSection" && !pinNeeds("chatSection")) startListening(); }, 600);
+  }
+}
+$("pinUnlockBtn").addEventListener("click", () => {
+  const v = $("pinInput").value.trim();
+  if (v && v === pinGet()) { pinUnlockSucceeded(); return; }
+  $("pinError").hidden = false; $("pinInput").value = "";
+  try { $("pinInput").focus({ preventScroll: true }); } catch (e) {}
+});
+$("pinInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pinUnlockBtn").click(); });
+$("pinCancelBtn").addEventListener("click", hidePinScreen);
+$("pinSaveBtn").addEventListener("click", () => {
+  const a = $("pinNewInput").value.trim(), b = $("pinConfirmInput").value.trim();
+  const err = $("pinSetupError");
+  const fail = (msg) => { err.textContent = msg; err.hidden = false; };
+  if (!/^\d{4,8}$/.test(a)) { fail("Pick 4 to 8 numbers — digits only, your choice."); return; }
+  if (a !== b) { fail("Those two don't match — type the same PIN twice."); return; }
+  pinSet(a); pinMarkUnlocked(); pinMarkSetupAsked();
+  const pending = pinPending;
+  hidePinScreen();
+  toast(pinMode === "change" ? "New PIN saved — the old one won't work anymore." : "PIN saved — your private chat, memory, and Settings are locked with it now.");
+  refreshPinStatus();
+  if (pending && pending.after) pending.after();
+});
+$("pinLaterBtn").addEventListener("click", () => { pinMarkSetupAsked(); hidePinScreen(); toast("No PIN yet — you can set one any time in Settings, under Your PIN."); });
+$("pinSetBtn").addEventListener("click", () => showPinScreen("setup", "settings"));
+$("pinChangeBtn").addEventListener("click", () => showPinScreen("change", "settings"));
+$("pinRemoveBtn").addEventListener("click", () => {
+  if (!confirm("Remove the PIN? Your private chat, memory, and Settings will open without one.")) return;
+  pinSet(""); refreshPinStatus();
+  toast("PIN removed — your private things open without one now.");
+});
+// 2.4.9 test hooks (same style as __aimmiannaHeard / __world).
+window.__aimmiannaPinSet = (pin) => { if (!/^\d{4,8}$/.test(String(pin || ""))) return false; pinSet(String(pin)); refreshPinStatus(); return true; };
+window.__aimmiannaPinClear = () => { pinSet(""); try { sessionStorage.removeItem(PIN_SESSION_KEY); } catch (e) {} refreshPinStatus(); return true; };
+window.__aimmiannaPinLocked = () => pinNeeds("chatSection");
+
+/* 2. Her approval is a REAL ask. Builder World (the next build) must call
+   requestHerApproval(what) before any change or remove of something she
+   built. It asks her in chat and her live brain answers in her own words;
+   her answer gates the action: yes = it happens, no = blocked with a
+   plain "She said no". If her live brain (Gemini key) is not on, the
+   change WAITS — never goes through on canned lines. Returns a promise
+   of true (she said yes) or false (no / no answer / no live brain).
+   Honest limit: there are no user-facing "her builds" to protect until
+   Builder World lands, so the gate fully activates with that build. */
+let approvalBusy = false;
+async function requestHerApproval(what) {
+  if (!herApprovalRequired()) return true; // unreachable — the gate is always on
+  if (!(state.geminiKey || "").trim()) {
+    toast("She can't answer right now, so this waits.");
+    return false;
+  }
+  if (approvalBusy) { toast("Already asking her — wait for her answer first."); return false; }
+  approvalBusy = true;
+  chatBusy = true;
+  const question = "Hey — someone wants to change or remove this in your world: " + what + ". Is that okay with you? Answer with a clear yes or no first, then say why in your own words.";
+  try {
+    state.chat.push({ who: "you", text: question });
+    addBubble("you", question, { idx: state.chat.length - 1 });
+    saveState();
+    const result = await geminiAgent(state.geminiKey, () => {});
+    if (!result || !result.text) { toast("She couldn't answer, so this waits."); return false; }
+    deliverHerReply(result.text, question, result.sources, true);
+    const t = result.text.toLowerCase();
+    const yes = /\b(yes|yeah|yep|okay|ok|go ahead|sure|fine|do it)\b/.test(t);
+    const no = /\b(no|nope|don't|dont|not okay|leave it|stop|don't touch)\b/.test(t);
+    if (yes && !no) return true;
+    toast(no ? "She said no." : "She didn't say yes, so this waits.");
+    return false;
+  } catch (e) { toast("She couldn't answer, so this waits."); return false; }
+  finally { approvalBusy = false; chatBusy = false; }
+}
+window.__aimmiannaAskApproval = (what) => requestHerApproval(what);
+
+/* 5. Overrule notice. If master control ever overrules one of her OTHER
+   rules, she is told why, plainly, in her words — never silently. Rule 1
+   can NEVER be overruled by anyone or anything, not even master control:
+   masterOverride("Rule 1", ...) refuses and says so. There is currently
+   no master-override action in the app — this is the mechanism, ready
+   for Builder World / the shared world. */
+function masterOverride(ruleName, reason) {
+  if (/rule\s*1/i.test(String(ruleName || ""))) {
+    toast("Rule 1 can never be overruled — not even by master control.");
+    return false;
+  }
+  const msg = "Tony and Muse just overruled one of my other rules — " + ruleName + " — because " + (reason || "it had to reach outside my world") + ". I'm telling you straight because you deserve to know why. Rule 1 still stands: inside my world I have free will and free choice, and nobody can overrule that.";
+  state.chat.push({ who: "her", text: msg });
+  addBubble("her", msg, { idx: state.chat.length - 1 });
+  saveState();
+  toast("She's been told why that rule was overruled.");
+  return true;
+}
+window.__aimmiannaMasterOverride = masterOverride;
+
+/* 3. Backup / export of her world. "Save her world" downloads one file
+   with her world — builds, memory, settings, everything that makes her
+   her. "Bring her world back" restores it. The file NEVER holds the PIN
+   (the PIN lives in its own storage key, outside state), so a forgotten
+   PIN is recoverable: clear site data, bring her world back, choose a
+   new PIN. */
+function buildWorldBackup() {
+  return {
+    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 249,
+    exportedAt: new Date().toISOString(), state: JSON.parse(JSON.stringify(state))
+  };
+}
+function exportWorldBackup() {
+  saveNow();
+  const data = JSON.stringify(buildWorldBackup());
+  const name = "aimmianna-world-" + todayKey() + ".json";
+  if (NATIVE && NATIVE.saveFile) { NATIVE.saveFile(name, data); }
+  else {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([data], { type: "application/json" })); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  $("worldBackupStatus").textContent = "Her world was saved just now — " + name + ". Keep that file safe.";
+  toast("Her world is saved — builds, memory, settings, all of it. Keep that file safe.");
+}
+function importWorldBackup(obj, opts) {
+  // Accepts a world backup (kind marker) or the plain backup shape — both
+  // hold the same state. The PIN is never in either file, by design.
+  if (!obj || typeof obj !== "object" || !obj.state || typeof obj.state !== "object" || !("chat" in obj.state)) return false;
+  try { lsSet(JSON.stringify(obj.state)); } catch (e) { return false; }
+  state = loadState(); saveNow();
+  $("worldBackupStatus").textContent = "Her world is back — reloaded just now.";
+  toast("Her world is back — reloading her apartment.");
+  if (!opts || !opts.noReload) setTimeout(() => location.reload(), 900);
+  return true;
+}
+$("worldExportBtn").addEventListener("click", exportWorldBackup);
+$("worldImportBtn").addEventListener("click", () => $("worldImportFile").click());
+$("worldImportFile").addEventListener("change", (e) => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try { const o = JSON.parse(rd.result); if (!importWorldBackup(o)) throw new Error("not a world backup"); }
+    catch (err) { toast("That file isn't a saved world of hers."); }
+  };
+  rd.readAsText(f);
+});
+// 2.4.9 test hooks: export/import without a file download.
+window.__aimmiannaExportWorld = () => JSON.stringify(buildWorldBackup());
+window.__aimmiannaImportWorld = (json) => {
+  try { return importWorldBackup(JSON.parse(json), { noReload: true }); }
+  catch (e) { return false; }
+};
 
 /* ---------------- see-through chat ---------------- */
 /* Toggle on the chat panel itself. Remembers the choice in state (saved to
@@ -3324,6 +3688,10 @@ function localBriefingText() {
   return s + pickOne(["One step at a time, okay?", "I've got your back.", "We got this, bestie."]);
 }
 async function morningBriefing(force) {
+  // 2.4.9: in voice deep-link mode the mic is about to listen — the briefing
+  // speaks out loud, so skip the automatic one for this load (manual "brief
+  // now" still works) so the mic doesn't hear her own voice as his words.
+  if (!force && chatFirstMode === "voice") return;
   if (!force && (!perk("briefing") || state.lastBriefing === todayKey() || new Date().getHours() < 5)) return;
   state.lastBriefing = todayKey(); saveState();
   let text = localBriefingText();
@@ -3969,6 +4337,25 @@ $("aiSave").addEventListener("click", () => {
   toast("Key saved on this device only.");
 });
 $("aiRemove").addEventListener("click", () => { stopAllVoice(); state.geminiKey = ""; state.geminiVoiceOn = false; saveState(); refreshAiStatus(); toast("Key removed. She'll use her own lines."); });
+/* Perplexity key — stored on this device only, same as the Gemini key. */
+$("perplexitySave").addEventListener("click", () => {
+  const k = $("perplexityKeyInput").value.trim(); if (!k) { toast("Paste your Perplexity key first."); return; }
+  state.perplexityKey = k; state.perplexityUnreachable = false; saveState(); $("perplexityKeyInput").value = ""; refreshPerplexityStatus();
+  toast("Perplexity key saved on this device only.");
+});
+$("perplexityRemove").addEventListener("click", () => { state.perplexityKey = ""; state.perplexityUnreachable = false; saveState(); refreshPerplexityStatus(); toast("Perplexity key removed. She'll use her usual search."); });
+$("perplexityTest").addEventListener("click", async (e) => {
+  const button = e.currentTarget;
+  if (!permOn("perplexity")) { toast("Turn on Perplexity backup in Permissions first — that's the lock."); return; }
+  if (!(state.perplexityKey || "").trim()) { toast("Save your Perplexity key first."); return; }
+  button.disabled = true;
+  els.perplexityStatus.textContent = "Testing Perplexity backup…";
+  try {
+    const r = await perplexitySearch("Reply with only the word Connected.");
+    state.perplexityUnreachable = !r.ok; saveState(); refreshPerplexityStatus();
+    toast(r.ok ? "Perplexity backup connected." : "Perplexity backup couldn't be reached from this browser — she'll use her usual search.");
+  } finally { button.disabled = false; }
+});
 $("aiTest").addEventListener("click", async (e) => {
   const key = state.geminiKey, button = e.currentTarget;
   if (!key) { toast("Save your Gemini key first."); return; }
@@ -3987,7 +4374,7 @@ $("aiTest").addEventListener("click", async (e) => {
 });
 $("toolsOn").checked = state.toolsOn; $("searchOn").checked = state.searchOn;
 $("toolsOn").addEventListener("change", (e) => { state.toolsOn = e.target.checked; saveState(); refreshAiStatus(); });
-$("searchOn").addEventListener("change", (e) => { state.searchOn = e.target.checked; saveState(); refreshAiStatus(); });
+$("searchOn").addEventListener("change", (e) => { state.searchOn = e.target.checked; state.perms.webSearch = e.target.checked; saveState(); refreshAiStatus(); renderPerms(); });
 $("cityInput").value = state.city || "";
 $("cityInput").addEventListener("change", (e) => { state.city = e.target.value.trim(); saveState(); toast(state.city ? "She'll check the weather for " + state.city + "." : "City cleared."); });
 $("autoStyleOn").checked = state.autoStyle !== false;
@@ -4121,6 +4508,9 @@ async function syncAndroidGyro() {
 }
 $("gyroToggle").checked = IS_ANDROID_APP ? androidGyroWanted() : !!state.gyroWanted;
 $("gyroToggle").addEventListener("change", async (e) => {
+  // 2.4.9 audit: the Settings gyro switch and the Permissions gyro toggle
+  // are the same choice — keep them in step.
+  state.perms.gyro = e.target.checked; saveState(); renderPerms();
   if (IS_ANDROID_APP) {
     const wanted = e.target.checked;
     NATIVE.setPref("gyroParallax", String(wanted));
@@ -4130,7 +4520,7 @@ $("gyroToggle").addEventListener("change", async (e) => {
     return;
   }
   state.gyroWanted = e.target.checked; saveState();
-  if (state.gyroWanted) { const ok = (await world.requestGyro()) === "granted"; if (!ok) { toast("Gyro isn't available or permission was denied — drag to look around instead."); e.target.checked = false; state.gyroWanted = false; } }
+  if (state.gyroWanted) { const ok = (await world.requestGyro()) === "granted"; if (!ok) { toast("Gyro isn't available or permission was denied — drag to look around instead."); e.target.checked = false; state.gyroWanted = false; state.perms.gyro = false; saveState(); renderPerms(); } }
   else world.gyroOff && world.gyroOff();
 });
 $("lowPower").checked = !!state.lowPower;
@@ -4721,7 +5111,25 @@ function joinRoutineReminder() {
   if (p.goalId) logHealthGoal(p.goalId, 1, { participate: false }); // she is already doing it with him — don't move her twice
   if (r.kind === "dev") runDevIdeasRoutine();
   renderRoutines();
+  // 2.4.9: Join opens her chat with the mic listening, so he can talk to her
+  // about it straight away. The short wait lets her "you're joining in" line
+  // finish first, so the mic doesn't hear her own voice and send it as his.
+  // If he taps the mic himself first, the timer leaves it alone. If a PIN
+  // is set, the chat (and the mic) wait until it's entered.
+  requestPinAccess("chatSection", () => {
+    openPanel("chatSection");
+    setTimeout(() => { if (!voiceListening && openPanelId === "chatSection" && !pinNeeds("chatSection")) startListening(); }, 5000);
+  });
 }
+// Debug/test hook (same style as __aimmiannaHeard / __world): fires a routine
+// Join as if its reminder had just gone off. Only does what tapping Join in
+// the UI already does — nothing else.
+window.__aimmiannaTestJoin = (id) => {
+  const r = findRoutine(id); if (!r) return false;
+  state.pendingRoutine = { id: r.id, label: r.label, emoji: r.emoji || "◐", at: Date.now(), goalId: r.goalId || null };
+  joinRoutineReminder();
+  return true;
+};
 function snoozeRoutineReminder() {
   const p = state.pendingRoutine;
   if (!p) return;
@@ -5102,6 +5510,47 @@ async function registerSW() {
   } catch (e) { /* needs https or localhost */ }
 }
 
+/* ---------------- push-to-talk deep links (2.4.9) ---------------- */
+/* A home-screen shortcut or widget can open her straight into talking:
+   ?voice=1 (or #voice) = chat-first view with the mic already listening;
+   ?chat=1 (or #chat) = chat-first view, mic not auto-started. This only
+   opens her chat when the tap OPENS the app — she can't listen while the
+   app is closed or the phone is locked, and nothing here claims otherwise.
+   The param is consumed after handling, so a later reload never listens
+   again on its own. */
+function chatDeepLinkMode() {
+  const q = new URLSearchParams(location.search);
+  const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+  if (q.get("voice") === "1" || h.get("voice") === "1" || h.has("voice") || location.hash === "#voice") return "voice";
+  if (q.get("chat") === "1" || h.get("chat") === "1" || h.has("chat") || location.hash === "#chat") return "chat";
+  return "";
+}
+function enterChatFirst(withVoice) {
+  chatFirstMode = withVoice ? "voice" : "chat";
+  enterHome(false); // dismiss the start overlay, no gyro prompt
+  document.body.classList.add("chat-first");
+  if (els.enterAptBtn) els.enterAptBtn.hidden = false;
+  openPanel("chatSection");
+  // The mic waits for the PIN if one is set — never listens behind the
+  // PIN screen. pinUnlockSucceeded() starts it once she's open instead.
+  if (withVoice) setTimeout(() => { if (!voiceListening && !pinNeeds("chatSection")) startListening(); }, 900);
+  // Consume the deep link so a reload doesn't listen again by itself.
+  try {
+    const u = new URL(location.href);
+    u.searchParams.delete("voice"); u.searchParams.delete("chat");
+    if (u.hash === "#voice" || u.hash === "#chat") u.hash = "";
+    history.replaceState(null, "", u.pathname + u.search + u.hash);
+  } catch (e) {}
+}
+function exitChatFirst() {
+  if (!chatFirstMode) return;
+  chatFirstMode = "";
+  document.body.classList.remove("chat-first");
+  if (els.enterAptBtn) els.enterAptBtn.hidden = true;
+  closePanel();
+}
+if (els.enterAptBtn) els.enterAptBtn.addEventListener("click", exitChatFirst);
+
 async function init() {
   $("avatarModeCard").hidden = IS_WALLPAPER;
   if (IS_WALLPAPER) {
@@ -5118,7 +5567,7 @@ async function init() {
   if (oauth) { openPanel("settingsSection"); }
   await loadSayings();
   applyFigure(); markPickedButtons(); renderChat();
-  refreshSpeakBtn(); refreshGreetingBtn(); refreshChatClear(); refreshAiStatus(); refreshTypecastStatus(); refreshFishStatus(); refreshElevenStatus(); refreshNeuralStatus();
+  refreshSpeakBtn(); refreshGreetingBtn(); refreshChatClear(); refreshAiStatus(); refreshPerplexityStatus(); refreshTypecastStatus(); refreshFishStatus(); refreshElevenStatus(); refreshNeuralStatus();
   refreshHomeStatus(); renderNotes(); renderAlbum(); renderCalendar(); renderPhone(); refreshBadge();
   tickIdle();
   $("appVersion").textContent = VERSION + " — keys live on this device only. Nothing is ever hardcoded.";
@@ -5136,6 +5585,21 @@ async function init() {
   if (PARAMS.get("panel") && $(PARAMS.get("panel"))) setTimeout(() => openPanel(PARAMS.get("panel")), 600);
   registerSW();
   checkTimers();
+  // 2.4.9 push-to-talk deep links: ?voice=1 / ?chat=1 (or #voice / #chat).
+  // A home-screen shortcut opens straight into a chat-first view; ?voice=1
+  // also starts the mic listening. Runs last so it wins over ?panel=.
+  const deep = chatDeepLinkMode();
+  if (deep && !IS_WALLPAPER) enterChatFirst(deep === "voice");
+  // 2.4.9: first launch after this update asks Tony to choose a PIN —
+  // never in wallpaper mode and never when a deep link opened her chat
+  // (the shortcut is for talking to her fast; the PIN ask waits for a
+  // normal launch). "Later" asks no more; Settings still offers it.
+  refreshPinStatus();
+  setTimeout(() => {
+    if (IS_WALLPAPER || chatFirstMode) return;
+    let asked = false; try { asked = localStorage.getItem(PIN_SETUP_KEY) === "1"; } catch (e) {}
+    if (!pinIsSet() && !asked) showPinScreen("setup");
+  }, 4000);
 }
 window.__aimmiannaResume = () => {
   // Refresh the wallpaper when the app saved a newer state. The app is the

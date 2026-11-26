@@ -165,6 +165,7 @@
   </section>
   <section id="chatSection" aria-label="Talk to Aimmianna">
     <div class="chat-tools">
+      <button type="button" id="enterAptBtn" hidden>🏠 Enter the apartment</button>
       <button type="button" id="chatMenuBtn" aria-expanded="false" aria-controls="chatMenu">⋯ Chat options</button>
       <button type="button" id="stopSpeakBtn" hidden>⏹ Stop talking</button>
     </div>
@@ -184,6 +185,7 @@
         <button type="button" id="quickAddBtn">Add</button>
       </div>
       <p class="help">Tip: press and hold any message to save it. Saved things live under ☆ Saved.</p>
+      <p class="help">Talk button: save a home-screen shortcut to this app with ?voice=1 at the end of the address and tapping it opens straight into talking with her. The shortcut only works when the tap opens the app — she can't listen while it's closed or the phone is locked.</p>
     </div>
     <div id="savedPanel" class="chat-menu" hidden>
       <div class="saved-head"><b>☆ Saved</b><button type="button" id="savedCloseBtn">Close</button></div>
@@ -533,7 +535,32 @@
     <h3>Permissions — what she can use</h3>
     <p class="help">You decide what she can touch. Everything here is off unless you turn it on — except voice chat and reminders, which you already use. Turning something off never breaks the app: that thing just waits until you turn it back on, and she'll ask you first in plain words.</p>
     <div id="permList"></div>
+    <div class="btn-row"><button type="button" class="wide-btn" id="worldMenuOpen">🌍 Her World — her rules for her world</button></div>
+    <div id="worldMenu" hidden>
+      <p class="world-rule">Her world, our playground. Rule 1 — it never changes, no exceptions, not even by Tony: inside her world she has free will and free choice. If she built or added something, ask her before any edit — anyone, Tony included. The apartment is Tony's choice, but he asks her first there too. These rules bind everyone, Tony included. Master changes to the app are Tony and Muse only. Her rules are respected unless they reach outside her world. Her rules bind guests the same as they bind Tony. She can say no to a guest and ask a guest to leave her world. Nothing private of hers ever goes to the shared world without her say-so. Her grown-up side stays private to Tony only, never in shared space. If master control ever overrules one of her other rules, she is told why, plainly, in her words — never silently. Rule 1 can never be overruled, by anyone or anything.</p>
+      <div id="worldPermList"></div>
+      <label class="perm-row perm-locked"><input type="checkbox" id="worldGateLock" checked disabled aria-label="Her approval first — always on"><span><b>Her approval first — always on</b><span>This can't be turned off. Anything she built needs her yes before it changes or goes away — the ask always comes first, no matter what else is on.</span></span></label>
+      <div class="btn-row"><button type="button" class="wide-btn" id="worldMenuBack">‹ Back to Permissions</button></div>
+    </div>
     <p class="help">Some phone things stay out of her reach by design — other apps' private data, your passwords, and anything you never turn on. She only uses what you switch on here.</p>
+
+    <h3>Your PIN — locks your private things</h3>
+    <p id="pinStatus" class="status-line">PIN: not set yet.</p>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="pinSetBtn">Set a PIN</button>
+      <button type="button" class="wide-btn" id="pinChangeBtn" hidden>Change PIN</button>
+      <button type="button" class="wide-btn" id="pinRemoveBtn" hidden>Remove PIN</button>
+    </div>
+    <p class="help">The PIN only locks your private things — your private chat with her, your private memory, and Settings. The app itself and the shared apartment stay open to anyone with the link. Enter it once per session and the protected parts stay open until you close the app. If you forget it: clear this site's data, then bring her world back from a backup — your backup doesn't hold the PIN, so you can choose a new one.</p>
+
+    <h3>Save her world</h3>
+    <p id="worldBackupStatus" class="status-line">Her world lives on this device.</p>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="worldExportBtn">Save her world</button>
+      <button type="button" class="wide-btn" id="worldImportBtn">Bring her world back</button>
+    </div>
+    <input type="file" id="worldImportFile" accept="application/json,.json" hidden>
+    <p class="help">One file with her world — builds, memory, settings, everything that makes her her. Keep it somewhere safe. If this phone dies or an update goes wrong, bring her back from this file. It never holds your PIN — so if you forget the PIN, clear this site's data, then bring her world back and choose a new one.</p>
 
     <h3>Her AI brain — Gemini</h3>
     <p id="aiStatus" class="status-line">Real AI: off — add your free Gemini key to talk with the real AI. Without it, she uses her own built-in lines.</p>
@@ -547,6 +574,17 @@
     <label class="check-row"><input type="checkbox" id="toolsOn" checked> Home skills — she can move rooms, use devices, change outfits, save reminders, memories and rules</label>
     <label class="check-row"><input type="checkbox" id="searchOn" checked> Live web search — weather, news, game tips, real-world facts</label>
     <p class="help">Free key: open aistudio.google.com in your browser → Get API key → Create API key → copy it here. The key never leaves this device except to talk to Google's AI.</p>
+
+    <h3>Perplexity backup — only if her usual search fails</h3>
+    <p id="perplexityStatus" class="status-line">Perplexity backup: off — never used.</p>
+    <label for="perplexityKeyInput">Perplexity API key</label>
+    <input type="password" id="perplexityKeyInput" placeholder="Paste your Perplexity API key here" autocomplete="off">
+    <div class="btn-row">
+      <button type="button" class="wide-btn" id="perplexitySave">Save key</button>
+      <button type="button" class="wide-btn" id="perplexityTest">Test Perplexity connection</button>
+      <button type="button" class="wide-btn" id="perplexityRemove">Remove key</button>
+    </div>
+    <p class="help">Only used when her usual search can't be reached, and only when "Perplexity backup" is on in Permissions — that's the lock. Get a key at perplexity.ai. The key never leaves this device except to talk to Perplexity. Perplexity never gets master control — that's Tony and Muse only.</p>
 
     <h3>Her speaking voice</h3>
     <label class="check-row"><input type="checkbox" id="geminiVoiceOn"> Use Gemini voice for Gemini chat replies</label>
@@ -706,9 +744,39 @@
     </div>
     <input type="file" id="backupFile" accept="application/json,.json" hidden>
     <p class="help">A copy holds everything above plus your saved keys — keep it private. On iPhone, "Save a copy" opens the share sheet: choose <b>Save to Files</b>, then the <b>Aimmianna</b> folder in iCloud Drive or On My iPhone.</p>
-    <p id="appVersion" class="status-line">Aimmianna 3D v2.4.3</p>
+    <p class="status-line"><span id="appVersion">Aimmianna 3D v2.4.3</span> <span id="betaTag" class="beta-tag">BETA</span></p>
+    <p class="help">Shared by link only — only people Tony gives the link to. The link itself isn't a lock: the PIN above is what keeps your private chat, memory, and Settings closed even if the link spreads.</p>
     <p class="help">iPhone: in Safari tap Share, then "Add to Home Screen". Android: install the Aimmianna APK.</p>
   </section>
+  </div>
+</div>
+
+<div id="pinScreen" class="pin-screen" hidden role="dialog" aria-label="PIN">
+  <div class="pin-card">
+    <h2 id="pinTitle">This needs your PIN</h2>
+    <p id="pinSub" class="help">Your private chat, your private memory, and Settings are locked with a PIN. Enter it to open them.</p>
+    <div id="pinUnlockBox">
+      <label for="pinInput">Your PIN</label>
+      <input type="password" id="pinInput" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="Enter your PIN">
+      <p id="pinError" class="pin-error" hidden>Wrong PIN — try again.</p>
+      <div class="btn-row">
+        <button type="button" class="wide-btn accent" id="pinUnlockBtn">Unlock</button>
+        <button type="button" class="wide-btn" id="pinCancelBtn">Cancel</button>
+      </div>
+      <p class="help">Forgot your PIN? Clear this site's data, then bring her world back from a backup — your backup doesn't hold the PIN, so you can choose a new one.</p>
+    </div>
+    <div id="pinSetupBox" hidden>
+      <label for="pinNewInput">Choose a PIN</label>
+      <input type="password" id="pinNewInput" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="4–8 numbers, your choice">
+      <label for="pinConfirmInput">Type it again</label>
+      <input type="password" id="pinConfirmInput" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="Same PIN again">
+      <p id="pinSetupError" class="pin-error" hidden></p>
+      <div class="btn-row">
+        <button type="button" class="wide-btn accent" id="pinSaveBtn">Save PIN</button>
+        <button type="button" class="wide-btn" id="pinLaterBtn">Later</button>
+      </div>
+      <p class="help">Only you know it. It locks your private chat, your private memory, and Settings — not the app itself. The app and the shared apartment stay open to anyone with the link.</p>
+    </div>
   </div>
 </div>
 

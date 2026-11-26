@@ -1,9 +1,10 @@
 {
   "version": "2.1.1",
   "build": 211,
-  "webVersion": "2.4.8",
-  "webBuild": 248,
-  "webNotes": "Voice chat mic + see-through chat: a small mic button beside Send with a live transcript that auto-sends when you stop talking, and a See-through toggle on the chat panel so you can see her and the room while you chat. Ritual room, deepened: every object does something real — candles are real light that burns down, incense calms the room, each crystal has its own effect, the wand and staff are the tools that make casting work, bowls show the herb stock casting spends, readings save to a history, the ball gives one daily vision, and a cast lights the altar and flares in the room. Plus a goth pass: darker palette, bat, skull and black roses, velvet drapes in the ritual room.",
+  "webVersion": "2.4.9",
+  "webBuild": 249,
+  "release": "beta",
+  "webNotes": "Beta — just for Tony and Muse. Push-to-talk deep links: open the app with ?voice=1 (or #voice) to jump straight into talking with her — chat-first view, mic already listening — or ?chat=1 (or #chat) for chat-first without auto-listen. An \"Enter the apartment\" button takes you into the full 3D app. Routine and reminder Join now opens her chat with the mic listening too. This only opens her chat when you tap the link — she can't listen while the app is closed or the phone is locked. Plus: a Perplexity backup toggle in Permissions with its own key field — only used if her usual search can't be reached — and a separate Her World menu in Permissions carrying her constitution, with her approval gate, which can never be turned off. Rule 1 never changes, no exceptions, not even by Tony. Five protections: a PIN that locks only your private chat, private memory, and Settings (the app and shared apartment stay open); her approval is a real ask in chat before anything she built changes; Save her world / Bring her world back backup in Settings; guest rules in her constitution; and if master control ever overrules one of her other rules, she is told why, plainly — Rule 1 can never be overruled. Shared by link only — only people Tony gives the link to; the PIN is what locks the private parts even if the link spreads.",
   "sharedRelease": {
     "revision": 229,
     "text": "Apartment Life and shared companion memory affect both devices. Check for updates on your iPhone and Android."

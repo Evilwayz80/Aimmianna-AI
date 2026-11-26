@@ -347,6 +347,16 @@ video, audio { width: 100%; margin: 8px 0; border-radius: 10px; }
 .perm-row input { flex: none; margin-top: 3px; width: 20px; height: 20px; }
 .perm-row b { display: block; font-size: 14px; }
 .perm-row span { font-size: 12px; color: var(--muted); line-height: 1.35; display: block; }
+
+/* ---------- Beta tag (2.4.9) ---------- */
+.beta-tag { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--gold); border: 1px solid var(--gold); border-radius: 10px; padding: 2px 7px; margin-left: 6px; vertical-align: middle; }
+
+/* ---------- Her World menu (2.4.9, inside Permissions) ---------- */
+#worldMenu { margin: 8px 0; }
+.world-rule { background: var(--panel2); border: 1px solid var(--gold); border-left-width: 4px; border-radius: var(--radius); padding: 12px; font-size: 14px; line-height: 1.45; color: var(--text); margin: 4px 0 10px; }
+.perm-row.perm-locked { background: rgba(212, 175, 55, .07); border: 1px solid rgba(212, 175, 55, .35); border-radius: 10px; padding: 10px; margin: 8px 0; }
+.perm-row.perm-locked input { accent-color: var(--gold); }
+.perm-row.perm-locked b { color: var(--gold); }
 #sheet.sheet-clear { background: rgba(18, 12, 26, .42); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
 #chatSection.chat-clear .chat-scroll { background: rgba(10, 5, 16, .30); border-color: rgba(255, 255, 255, .16); }
 #chatSection.chat-clear .bubble { background: rgba(24, 14, 34, .82); text-shadow: 0 1px 3px rgba(0, 0, 0, .9); }
@@ -483,6 +493,32 @@ body.sheet-open #dock { transform: translateX(-50%) translateY(140%); opacity: 0
 @keyframes secIn { from { opacity: 0; transform: translateY(6px); } }
 .sheet .chat-scroll { height: clamp(150px, 30vh, 340px); }
 .sheet.tall .chat-scroll { height: clamp(200px, 50vh, 560px); }
+
+/* ---------- Chat-first view (2.4.9 push-to-talk deep links) ---------- */
+/* Opened with ?voice=1 / ?chat=1 (or #voice / #chat): the chat panel fills
+   the whole screen and the 3D apartment stays hidden behind it, so a
+   home-screen talk button lands straight in a conversation. One clear
+   button — "Enter the apartment" — drops back into the normal full app. */
+#enterAptBtn { font-size: 13px; min-height: 30px; padding: 4px 12px; border-radius: 15px; background: var(--panel2); border: 1px solid var(--gold); color: var(--gold); }
+body.chat-first #scene,
+body.chat-first #roomBar,
+body.chat-first #statusChip,
+body.chat-first #dock,
+body.chat-first #anchorBubble,
+body.chat-first #anchorFx,
+body.chat-first #lifeHud { display: none !important; }
+body.chat-first #sheetBack { visibility: hidden !important; }
+body.chat-first #sheet {
+  left: 0; right: 0; bottom: 0; top: 0;
+  width: auto; max-width: none; height: 100dvh; max-height: none;
+  border-radius: 0; border: none;
+  transform: translateY(0);
+}
+body.chat-first .sheet-body { padding-bottom: calc(var(--safe-b) + 12px); }
+body.chat-first #chatSection.active { display: flex; flex-direction: column; height: 100%; }
+body.chat-first .sheet .chat-scroll,
+body.chat-first .sheet.tall .chat-scroll { flex: 1 1 auto; height: auto; min-height: 120px; }
+body.chat-first .toast { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 12px); }
 select { width: 100%; min-height: 44px; padding: 8px 12px; margin: 6px 0; border-radius: 10px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); font: 16px var(--font-body); }
 input[type="url"], input[type="date"] { width: 100%; min-height: 44px; padding: 10px 12px; margin: 6px 0; border-radius: 10px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); font: 16px var(--font-body); }
 .hub-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0 4px; }
@@ -507,6 +543,23 @@ input[type="url"], input[type="date"] { width: 100%; min-height: 44px; padding: 
 .tcard .tname { font: 700 11.5px var(--font-display); color: var(--text); }
 .tcard .tpos { font-size: 10.5px; color: var(--muted); }
 @keyframes cardIn { from { opacity: 0; transform: rotateY(90deg); } }
+
+/* ---------- PIN screen (2.4.9) ---------- */
+/* Guards the private parts — private chat, private memory, Settings. The
+   app itself stays open behind it, so this sits above everything else. */
+.pin-screen { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(5, 3, 8, .78); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); padding: 16px; }
+.pin-screen[hidden] { display: none; }
+.pin-card {
+  width: min(380px, 94vw); max-height: 88vh; max-height: 88dvh; overflow-y: auto;
+  border-radius: 18px; padding: 20px 18px;
+  background: linear-gradient(170deg, #1c1226 0%, #0d0912 100%);
+  border: 1px solid rgba(212,175,55,.45); box-shadow: 0 24px 70px rgba(0,0,0,.8), 0 0 50px rgba(123,47,190,.3);
+}
+.pin-card h2 { margin: 0 0 6px; font-family: var(--font-display); color: var(--gold); font-size: 20px; }
+.pin-card label { display: block; margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.pin-card input { width: 100%; font-size: 18px; letter-spacing: 4px; text-align: center; }
+.pin-error { color: #ff7a7a; font-size: 13px; margin: 8px 0 0; font-weight: 700; }
+.pin-error[hidden] { display: none; }
 
 /* ---------- phone overlay ---------- */
 .phone-ov { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(5, 3, 8, .62); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); padding: 16px; }
