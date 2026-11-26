@@ -5,11 +5,10 @@
    lights, no shadow maps (a soft blob shadow sits under her instead), and an
    adaptive pixel ratio — tuned to hold 60fps on iPhone Safari.
 
-   The avatar is a separate class (BillboardAvatar). To upgrade to a full 3D
-   model later, write a class with the same small interface
-   (object3d, setLook(canvas), update(dt, t, camera, pose), headHeight,
-   pickMesh) and pass it in createWorld({ avatarFactory }). */
+   The shared avatar starts with the wardrobe portrait and can swap to the
+   bundled 3D model without changing navigation, camera or wallpaper input. */
 import * as THREE from "./vendor/three.module.min.js";
+import { OUTFIT_3D, hasOutfit3D, buildOutfitTexture, buildGarments, buildWeapon, hasWeapon3D } from "./outfits3d.js";
 
 /* ------------------------------------------------------------------ layout */
 export const ROOMS = {
@@ -39,7 +38,8 @@ export const SPOTS = {
   kitchen_table:  { room: "kitchen",  x: 6.0,   z: 0.35 },
   tub:            { room: "bathroom", x: 12.0,  z: -3.2, pose: "bath" },
   sink:           { room: "bathroom", x: 14.1,  z: -2.65 },
-  bath_center:    { room: "bathroom", x: 12.5,  z: 0.7 }
+  bath_center:    { room: "bathroom", x: 12.5,  z: 0.7 },
+  yard_center:    { room: "kitchen",  x: 6.65,  z: 5.35 }
 };
 export const ROOM_SPOTS = {
   bedroom: ["bedside", "vanity", "nightstand", "bedroom_center", "bed"],
@@ -220,6 +220,234 @@ class BillboardAvatar {
     this.mat.color.setScalar(br);
     this.shadow.material.opacity = shadowA * 0.9;
     this.shadow.scale.set(1.15 - y * 1.5, 0.6 - y * 0.8, 1);
+  }
+}
+
+const OUTFIT_MASK = new URL("./assets/models/outfit3d-mask.png", import.meta.url).href;
+
+
+class BuiltInAvatar extends BillboardAvatar {
+  setModelEnabled(enabled) {
+    this.modelWanted = enabled;
+    if (this.model) this.showModel(enabled);
+    else if (enabled && !this.modelLoad) this.modelLoad = this.loadModel();
+  }
+
+  async loadModel() {
+    try {
+      const { GLTFLoader } = await import("./vendor/loaders/GLTFLoader.js");
+      const loader = new GLTFLoader();
+      const load = (filename) => loader.loadAsync(new URL(`./assets/models/${filename}`, import.meta.url).href);
+      let rigged = true, gltf;
+      try {
+        gltf = await load("aimmianna-rigged.glb");
+        if (!["idle", "walk"].every((name) => THREE.AnimationClip.findByName(gltf.animations, name)?.duration > 0))
+          throw new Error("Idle and Walk are required");
+      } catch (error) {
+        console.warn("Animated avatar unavailable; loading the static 3D model.", error);
+        rigged = false;
+        gltf = await load("aimmianna-mobile.glb");
+      }
+      const { scene, animations } = gltf;
+      if (rigged) {
+        this.mixer = new THREE.AnimationMixer(scene);
+        this.actions = Object.fromEntries(animations.map((clip) => [clip.name, this.mixer.clipAction(clip)]));
+        this.playMotion("idle");
+        this.mixer.update(0);
+      }
+      const bounds = new THREE.Box3().setFromObject(scene);
+      const center = bounds.getCenter(new THREE.Vector3());
+      const scale = this.height / (bounds.max.y - bounds.min.y);
+      if (bounds.isEmpty() || !Number.isFinite(scale) || scale <= 0) throw new Error("Invalid avatar bounds");
+      scene.scale.setScalar(scale);
+      scene.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+      const group = new THREE.Group();
+      group.name = "Aimmianna3D";
+      const facing = new THREE.Group();
+      facing.rotation.y = rigged ? 0 : -Math.PI / 2; // Animated and static exports use different forward axes.
+      facing.add(scene);
+      group.add(facing);
+      this.modelParts = [];
+      this.rigged = rigged;
+      scene.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        // A small fill keeps the textured model legible in the gothic room.
+        const material = mesh.material;
+        material.metalness = 0;
+        material.metalnessMap?.dispose();
+        material.metalnessMap = null;
+        material.roughnessMap = null;
+        material.roughness = 0.88;
+        material.emissiveMap = material.map;
+        material.emissive.set(0xffffff);
+        material.emissiveIntensity = 0.52;
+        mesh.userData.tap = "her";
+        if (mesh.isSkinnedMesh) {
+          // A conservative bound covers both clips without rescanning the
+          // skin every frame. A tap still checks the actual deformed mesh.
+          mesh.computeBoundingSphere();
+          mesh.boundingSphere.radius *= 1.35;
+          mesh.boundingBox = null;
+        }
+        this.modelParts.push(mesh);
+      });
+      if (!this.modelParts.length) throw new Error("Avatar has no mesh");
+      this.originalMaps = this.modelParts.map((mesh) => mesh.material.map);
+      this.model = group;
+      this.pivot.add(group);
+      this.showModel(this.modelWanted);
+    } catch (error) {
+      this.modelFailed = true;
+      console.warn("3D avatar unavailable; keeping the wardrobe portrait.", error);
+    }
+  }
+
+  showModel(on) {
+    this.model.visible = !!on;
+    this.body.visible = !on;
+    this.refreshOutfit();
+    if (!on && this.mixer) {
+      this.mixer.stopAllAction();
+      this.motion = null;
+    }
+  }
+
+  setOutfit(name) {
+    this.outfitWanted = hasOutfit3D(name) ? name : "original";
+    this.refreshOutfit();
+  }
+
+  setWeapon(name) {
+    this.weaponWanted = hasWeapon3D(name) ? name : "none";
+    this.refreshWeapon();
+  }
+
+  baseSkin() { return this.modelParts?.find((m) => m.isSkinnedMesh); }
+
+  clearExtras(key) {
+    for (const mesh of this[key] || []) {
+      mesh.parent?.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+    this[key] = [];
+  }
+
+  refreshWeapon() {
+    if (!this.model || !this.rigged) return;
+    const name = this.model.visible ? this.weaponWanted || "none" : "none";
+    if (name === this.weaponApplied) return;
+    this.clearExtras("weaponMeshes");
+    const base = this.baseSkin();
+    try {
+      for (const mesh of buildWeapon(base, name)) { base.parent.add(mesh); this.weaponMeshes.push(mesh); }
+    } catch (error) { console.warn("3D weapon unavailable.", error); }
+    this.weaponApplied = name;
+  }
+
+  applyOutfitMap(map, name) {
+    for (const [index, mesh] of this.modelParts.entries()) {
+      const material = mesh.material;
+      const next = map || this.originalMaps[index];
+      if (material.map !== next) {
+        material.map = next;
+        material.emissiveMap = next;
+        material.needsUpdate = true;
+      }
+    }
+    this.outfitApplied = name;
+  }
+
+  async refreshOutfit() {
+    if (!this.model || !this.rigged) return;
+    this.refreshWeapon();
+    const name = this.model.visible ? this.outfitWanted || "original" : "original";
+    if (name === this.outfitApplied || this.outfitLoad === name) return;
+    const spec = OUTFIT_3D[name];
+    this.outfitLoad = name;
+    try {
+      let texture = null;
+      if (spec && (spec.top || spec.bottom || spec.shoes)) {
+        this.outfitCache = this.outfitCache || new Map();
+        texture = this.outfitCache.get(name);
+        if (!texture) {
+          texture = await buildOutfitTexture(this.originalMaps[0], spec, OUTFIT_MASK);
+          this.outfitCache.set(name, texture);
+          // keep memory low on phones: remember only the last two looks
+          while (this.outfitCache.size > 2) {
+            const [oldName, oldTex] = this.outfitCache.entries().next().value;
+            this.outfitCache.delete(oldName);
+            if (oldName !== this.outfitApplied) oldTex.dispose();
+          }
+        }
+      }
+      if (this.outfitLoad !== name) return;           // a newer pick arrived
+      const current = this.model.visible ? this.outfitWanted || "original" : "original";
+      if (current !== name) return;
+      this.applyOutfitMap(texture, name);
+      this.clearExtras("garmentMeshes");
+      const base = this.baseSkin();
+      for (const mesh of buildGarments(base, spec)) { base.parent.add(mesh); this.garmentMeshes.push(mesh); }
+    } catch (error) {
+      console.warn("3D outfit unavailable; keeping her original clothes.", error);
+    } finally {
+      if (this.outfitLoad === name) this.outfitLoad = null;
+      const want = this.model.visible ? this.outfitWanted || "original" : "original";
+      if (want !== this.outfitApplied && want !== name) this.refreshOutfit();
+    }
+  }
+
+  playMotion(name) {
+    if (!this.actions || this.motion === name) return;
+    const next = this.actions[name];
+    if (!next) return;
+    const previous = this.actions[this.motion];
+    next.reset().setEffectiveWeight(1).play();
+    if (previous) next.crossFadeFrom(previous, 0.22, false);
+    this.motion = name;
+  }
+
+  get motionState() {
+    return this.model?.visible && this.motion ? { clip: this.motion, time: this.actions[this.motion].time } : null;
+  }
+  get activePicks() { return this.model?.visible ? this.modelParts : [this.body]; }
+  get representation() { return this.model?.visible ? "model" : this.modelFailed ? "fallback" : "portrait"; }
+
+  update(dt, t, camera, pose) {
+    super.update(dt, t, camera, pose);
+    if (!this.model?.visible) return;
+    const mode = pose.mode;
+    if (this.mixer) {
+      const walking = mode === "walk";
+      this.playMotion(walking ? "walk" : "idle");
+      this.mixer.update(dt);
+      if (mode !== "lie") {
+        const target = walking ? pose.heading : this.yaw;
+        if (!Number.isFinite(this.modelYaw)) this.modelYaw = this.yaw;
+        const delta = Math.atan2(Math.sin(target - this.modelYaw), Math.cos(target - this.modelYaw));
+        this.modelYaw += delta * (1 - Math.exp(-dt * 9));
+        this.pivot.rotation.y = this.modelYaw;
+      }
+    }
+    this.model.position.copy(this.body.position);
+    this.model.rotation.copy(this.body.rotation);
+    this.model.scale.setScalar(1);
+    if (mode === "walk" && this.mixer) {
+      // The skeleton already supplies the stride, bob and lean.
+      this.model.position.y = 0;
+      this.model.rotation.set(0, 0, 0);
+    }
+    if (mode === "lie") {
+      this.model.rotation.set(0, 0, 0);
+      this.model.position.y = 0.05;
+      this.model.position.z = 0.12;
+      this.model.scale.setScalar(0.9);
+    } else if (mode === "bath") {
+      this.model.position.y = -0.4;
+    } else if (mode === "sit") {
+      this.model.rotation.x = -0.08;
+    }
+    for (const mesh of this.modelParts) mesh.material.emissiveIntensity = 0.52 * (pose.brightness ?? 1);
   }
 }
 
@@ -738,15 +966,67 @@ export function createWorld(opts) {
   applyLED();
 
   /* ------------ avatar */
-  const avatar = (opts.avatarFactory ? opts.avatarFactory(THREE, { shadowTexture: SHADOW }) : new BillboardAvatar(SHADOW));
+  const avatar = (opts.avatarFactory ? opts.avatarFactory(THREE, { shadowTexture: SHADOW }) : new BuiltInAvatar(SHADOW));
   scene.add(avatar.object3d);
-  avatar.pickMesh.userData.tap = "her"; tappables.push(avatar.pickMesh);
+  avatar.pickMesh.userData.tap = "her";
   const her = {
     pos: new THREE.Vector3(SPOTS.living_center.x, 0, SPOTS.living_center.z),
     path: [], speed: 1.55, spot: "living_center", pose: null, activity: "vibe",
-    talking: false, room: "living", moveDir: 0, arriveCb: null
+    talking: false, room: "living", moveDir: 0, heading: 0, arriveCb: null
   };
   avatar.object3d.position.copy(her.pos);
+
+  // The private game's figures are attached only while it is being played.
+  let life = null, lifePath = [], lifeHeading = 0, lifeArrive = null, lifeView = null;
+  function setLifeFigures(figures, spot) {
+    if (life) { life.root.visible = false; life.root.removeFromParent(); }
+    if (lifeArrive) lifeArrive(false);
+    lifeArrive = null; lifePath = []; lifeHeading = 0; life = figures;
+    if (life) {
+      const s = SPOTS[spot] || SPOTS.living_center;
+      life.player.position.set(s.x + .40, 0, Math.min(2.9, s.z + .45));
+      life.root.visible = true; scene.add(life.root);
+    } else if (lifeView) {
+      Object.assign(cam, lifeView); lifeView = null;
+    }
+  }
+  function startLifeView() {
+    lifeView = { mode: cam.mode, room: cam.room, zoom: cam.zoom, yaw: cam.yaw, pitch: cam.pitch };
+    setFollow();
+    const o = life.player.position;
+    cam.pos.set(o.x, 3.48, o.z + 4.55); cam.look.set(o.x, .96, o.z - .42);
+  }
+  function moveLifePlayer(x, z) {
+    if (!life || !Number.isFinite(x) || !Number.isFinite(z)) return Promise.resolve(false);
+    const outside = z > Z_FRONT;
+    x = outside ? THREE.MathUtils.clamp(x, 4.65, 9.3) : THREE.MathUtils.clamp(x, -13.5, 14.5);
+    z = outside ? THREE.MathUtils.clamp(z, Z_FRONT + .08, 7.88) : THREE.MathUtils.clamp(z, -3.2, Z_FRONT);
+    const pos = life.player.position;
+    const fromOutside = pos.z > Z_FRONT;
+    const source = roomAt(pos.x), dest = roomAt(x);
+    lifePath = [];
+    if (lifeArrive) lifeArrive(false);
+    if (outside !== fromOutside) {
+      if (!fromOutside && source !== "kitchen") {
+        if (pos.z < HALL_Z - .15) lifePath.push(new THREE.Vector3(pos.x, 0, HALL_Z));
+        lifePath.push(new THREE.Vector3(7.07, 0, HALL_Z));
+      }
+      lifePath.push(new THREE.Vector3(7.07, 0, 3.5));
+      if (!outside && dest !== "kitchen") {
+        lifePath.push(new THREE.Vector3(7.07, 0, HALL_Z));
+        lifePath.push(new THREE.Vector3(x, 0, HALL_Z));
+      }
+    } else if (source !== dest) {
+      if (pos.z < HALL_Z - .15) lifePath.push(new THREE.Vector3(pos.x, 0, HALL_Z));
+      lifePath.push(new THREE.Vector3(x, 0, Math.max(z, HALL_Z)));
+    }
+    lifePath.push(new THREE.Vector3(x, 0, z));
+    return new Promise((resolve) => { lifeArrive = resolve; });
+  }
+  function moveLifeToSpot(name) {
+    const spot = SPOTS[name];
+    return spot ? moveLifePlayer(spot.x + .42, spot.z + .65) : Promise.resolve(false);
+  }
 
   function planPath(tx, tz) {
     const pts = [];
@@ -804,12 +1084,12 @@ export function createWorld(opts) {
     const { aspect } = viewport();
     const portrait = aspect < 0.9;
     if (cam.mode === "follow") {
-      const head = avatar.object3d.position;
-      const lift = her.pose === "lie" ? 0.6 : her.pose === "bath" ? 0.5 : her.pose === "sit" ? 0.7 : 1.0;
+      const head = life ? life.player.position : avatar.object3d.position;
+      const lift = life ? 1.0 : her.pose === "lie" ? 0.6 : her.pose === "bath" ? 0.5 : her.pose === "sit" ? 0.7 : 1.0;
       cam.wantLook.set(head.x, lift, head.z - 0.4);
       // tall phone screens: closer and looking a bit more down, so the floor fills
       // the bottom of the screen instead of empty space in front of the dollhouse
-      const dist = (portrait ? 5.0 : 5.8) * cam.zoom;
+      const dist = (life ? (portrait ? 4.4 : 5.0) : (portrait ? 5.0 : 5.8)) * cam.zoom;
       const el = (portrait ? 0.5 : 0.34) + cam.pitch;
       const yaw = cam.yaw + (cam.page - 0.5) * 0.6; // live wallpaper: home-screen pages pan the view
       cam.wantPos.set(head.x + Math.sin(yaw) * dist * Math.cos(el), lift + Math.sin(el) * dist + 0.4, head.z + Math.cos(yaw) * dist * Math.cos(el));
@@ -834,13 +1114,21 @@ export function createWorld(opts) {
     let b = e.beta, g = e.gamma;
     const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
     if (ang === 90) { const t = b; b = -g; g = t; } else if (ang === -90 || ang === 270) { const t = b; b = g; g = -t; }
+    applyScreenTilt(b, g);
+  }
+  function applyScreenTilt(b, g) {
+    if (!Number.isFinite(b) || !Number.isFinite(g)) return;
+    cam.gyro.on = true;
     if (!cam.gyro.base) cam.gyro.base = { b, g };
+    // Use the shortest difference when the device tilt wraps at ±180°.
+    const delta = (a, prev) => ((a - prev + 540) % 360 + 360) % 360 - 180;
+    const db = delta(b, cam.gyro.base.b), dg = delta(g, cam.gyro.base.g);
     // baseline slowly drifts toward how you're holding the phone
-    cam.gyro.base.b += (b - cam.gyro.base.b) * 0.004;
-    cam.gyro.base.g += (g - cam.gyro.base.g) * 0.004;
+    cam.gyro.base.b = delta(cam.gyro.base.b + db * 0.004, 0);
+    cam.gyro.base.g = delta(cam.gyro.base.g + dg * 0.004, 0);
     const clamp = (v) => Math.max(-25, Math.min(25, v));
-    cam.gyro.tx = clamp(g - cam.gyro.base.g) / 25;
-    cam.gyro.ty = clamp(b - cam.gyro.base.b) / 25;
+    cam.gyro.tx = clamp(dg * 0.996) / 25;
+    cam.gyro.ty = clamp(db * 0.996) / 25;
   }
   async function requestGyro() {
     try {
@@ -895,21 +1183,28 @@ export function createWorld(opts) {
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); cam.zoom = Math.max(0.55, Math.min(1.6, cam.zoom * (1 + e.deltaY * 0.001))); }, { passive: false });
   canvas.addEventListener("dblclick", () => { cam.yaw = 0; cam.pitch = 0; cam.zoom = 1; });
 
-  function pick(cx, cy) {
+  function hitAt(cx, cy) {
     const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height || cx < r.left || cy < r.top || cx >= r.right || cy >= r.bottom) return null;
     ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const hits = ray.intersectObjects(tappables, false);
+    const avatarPicks = avatar.activePicks || [avatar.pickMesh];
+    const fixtures = life ? [...tappables, ...life.yardTaps] : tappables;
+    const hits = ray.intersectObjects(avatarPicks, false, ray.intersectObjects(fixtures, false));
     for (const h of hits) {
       const tap = h.object.userData.tap;
       if (!tap) continue;
-      if (tap === "her") {
+      if (h.object === avatar.pickMesh) {
         // only count her if the hit pixel is actually opaque-ish (crude: middle 70% of the card)
         const u = h.uv; if (u && (u.x < 0.18 || u.x > 0.82)) continue;
       }
-      onTap(tap, { point: h.point, x: cx, y: cy });
-      return;
+      return { tap, point: h.point };
     }
+    return null;
+  }
+  function pick(cx, cy) {
+    const hit = hitAt(cx, cy);
+    if (hit) onTap(hit.tap, { point: hit.point, x: cx, y: cy });
   }
 
   /* ------------ anchors (speech bubble, idle fx) follow her head */
@@ -930,6 +1225,7 @@ export function createWorld(opts) {
   const clock = new THREE.Clock();
   let lastChan = 0, frameAvg = 16, slowFor = 0, running = true, lastRoom = her.room;
   const tmp = new THREE.Vector3();
+  const lifeDelta = new THREE.Vector3();
   function resize() {
     const { w, h, aspect } = viewport();
     renderer.setSize(w, h, false);
@@ -959,6 +1255,7 @@ export function createWorld(opts) {
       const target = her.path[0];
       tmp.subVectors(target, her.pos); tmp.y = 0;
       const d = tmp.length();
+      if (d > 0.001) her.heading = Math.atan2(tmp.x, tmp.z);
       const step = her.speed * dt;
       if (d <= step) { her.pos.copy(target); her.path.shift(); }
       else { tmp.multiplyScalar(step / d); her.pos.add(tmp); }
@@ -988,7 +1285,20 @@ export function createWorld(opts) {
     else mode = her.activity || "idle";
     const lamp = roomLights[nowRoom];
     const lit = LAMP_MODES[lamp.mode].i ? 1 : 0.72;
-    avatar.update(dt, t, camera, { mode, moveDir: her.moveDir, brightness: lit });
+    avatar.update(dt, t, camera, { mode, moveDir: her.moveDir, heading: her.heading, brightness: lit });
+
+    if (life) {
+      if (lifePath.length) {
+        const pos = life.player.position, target = lifePath[0];
+        lifeDelta.subVectors(target, pos);
+        const dist = lifeDelta.length(), stride = dt * 3.8;
+        if (dist > .01) lifeHeading = Math.atan2(lifeDelta.x, lifeDelta.z);
+        if (dist <= stride) { pos.copy(target); lifePath.shift(); }
+        else pos.addScaledVector(lifeDelta, stride / dist);
+        if (!lifePath.length && lifeArrive) { const finish = lifeArrive; lifeArrive = null; finish(true); }
+      }
+      life.animate(!!lifePath.length, lifeHeading, t);
+    }
 
     // camera
     computeWant();
@@ -1079,15 +1389,30 @@ export function createWorld(opts) {
   /* ------------ public API */
   return {
     THREE, scene, camera, renderer,
+    hitsAimmiannaAt(x, y) {
+      if (!(x >= 0 && x < 1 && y >= 0 && y < 1)) return false;
+      const hit = hitAt(x * window.innerWidth, y * window.innerHeight);
+      return !!hit && hit.tap === "her";
+    },
     setLook: (cv) => avatar.setLook(cv),
+    setModelEnabled: (enabled) => avatar.setModelEnabled?.(enabled),
+    setModelOutfit: (name) => avatar.setOutfit?.(name),
+    setModelWeapon: (name) => avatar.setWeapon?.(name),
+    get modelLook() { return { outfit: avatar.outfitApplied || "original", weapon: avatar.weaponApplied || "none", pieces: (avatar.garmentMeshes || []).length + (avatar.weaponMeshes || []).length, shown: avatar.representation }; },
+    getModelOutfit: () => avatar.outfitApplied || "original",
+    enterLife: (figures) => { if (life) return; setLifeFigures(figures, "living_center"); startLifeView(); },
+    leaveLife: () => setLifeFigures(null),
+    moveLifePlayer, moveLifeToSpot,
+    getAvatarRepresentation: () => avatar.representation || "portrait",
+    getAvatarMotion: () => avatar.motionState || null,
     goToSpot, goToPoint, goToRoom, placeAt,
     getHer: () => ({ room: roomAt(her.pos.x), spot: her.spot, walking: her.path.length > 0, pose: her.pose }),
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
     setFollow, setRoomView,
     getCameraMode: () => (cam.mode === "follow" ? "follow" : cam.room),
-    requestGyro, gyroOn: () => cam.gyro.on,
-    gyroOff() { window.removeEventListener("deviceorientation", onOrient); cam.gyro.on = false; cam.gyro.tx = 0; cam.gyro.ty = 0; },
+    requestGyro, applyScreenTilt, gyroOn: () => cam.gyro.on,
+    gyroOff() { window.removeEventListener("deviceorientation", onOrient); cam.gyro.on = false; cam.gyro.base = null; cam.gyro.tx = 0; cam.gyro.ty = 0; },
     setPageOffset(x) { cam.page = Math.max(0, Math.min(1, Number(x) || 0.5)); },
     setLowPower(on) { lowPower = !!on; pixelRatio = on ? 1 : Math.min(window.devicePixelRatio || 1, 2); renderer.setPixelRatio(pixelRatio); resize(); },
     setAnchors: (els) => { anchors.length = 0; els.forEach((e) => anchors.push(e)); },

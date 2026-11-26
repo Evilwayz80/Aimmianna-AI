@@ -40,6 +40,21 @@
 </header>
 <div id="statusChip" class="hud chip" aria-live="polite"><span id="roomLabel">Living Room</span> · <span id="idleLabel">vibing under the LEDs</span></div>
 
+<header id="lifeHud" class="hud life-hud" hidden aria-label="Private Game Mode controls">
+  <div class="life-hud-inner">
+    <button type="button" id="lifeOpen" class="pill">Life menu</button>
+    <select id="lifeRoom" aria-label="Walk to room">
+      <option value="">Walk to…</option>
+      <option value="living">Living room</option><option value="kitchen">Kitchen</option>
+      <option value="bedroom">Bedroom</option><option value="bathroom">Bathroom</option>
+      <option value="yard">Yard</option>
+    </select>
+    <button type="button" id="lifeExit" class="pill">Exit game</button>
+  </div>
+  <p id="lifeHudSummary"></p>
+  <p id="lifeNotice"></p>
+</header>
+
 <nav id="dock" class="hud" aria-label="Main">
   <button type="button" data-goto="chatSection"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg><span>Talk</span></button>
   <button type="button" id="phoneBtn"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/></svg><span>Phone</span><b id="phoneBadge" class="badge" hidden>0</b></button>
@@ -62,6 +77,8 @@
       <button type="button" data-goto="wardrobeSection"><span class="hi">♰</span>Wardrobe</button>
       <button type="button" data-goto="careSection"><span class="hi">✧</span>Care &amp; Makeup</button>
       <button type="button" data-goto="gamesSection"><span class="hi">☾</span>Games</button>
+      <button type="button" data-goto="cardsSection"><span class="hi">♠</span>Card Games</button>
+      <button type="button" data-goto="spiritSection"><span class="hi">☠</span>Spirit Game</button>
       <button type="button" data-goto="tvSection"><span class="hi">▣</span>TV</button>
       <button type="button" data-goto="stereoSection"><span class="hi">♫</span>Stereo</button>
       <button type="button" data-goto="albumSection"><span class="hi">❦</span>Album</button>
@@ -81,6 +98,17 @@
     <p id="homeStatus" class="status-line">Bedtime off. Alarm off.</p>
     <p class="help">Tap things in her apartment: the TV, stereo, PC, vanity, phone on the nightstand, lamps, LED strip, coffee maker, microwave, fridge, tub and sink. Tap the floor to send her somewhere, tap her to talk. Drag to look around, pinch to zoom, double-tap to reset.</p>
   </section>
+  <section id="cardsSection" aria-label="Card games">
+    <div class="btn-row tabs" role="tablist">
+      <button type="button" id="tabRunway" class="tab active" role="tab">Runway Show</button>
+      <button type="button" id="tabCCG" class="tab" role="tab">Card Battles</button>
+    </div>
+    <div id="cardsRoot"></div>
+    <div id="ccgRoot" hidden></div>
+  </section>
+  <section id="spiritSection" aria-label="Spirit game">
+    <div id="spiritRoot"></div>
+  </section>
   <section id="skillsSection" aria-label="Her skills and bond">
     <div class="bond-card">
       <div class="bond-top"><span id="bondLevel" class="bond-level">Bond level 1</span></div>
@@ -99,6 +127,26 @@
       <button type="button" id="sendBtn">Send</button>
       <button type="button" id="micBtn" aria-label="Speak instead of typing">Mic</button>
     </div>
+    <details id="pickupPanel" class="memory-box" hidden>
+      <summary>Pick up where I left off</summary>
+      <p class="help" id="pickupHelp">One next step, saved on this device. Saving a new step replaces the old one. You can also type “Where was I?” in Talk.</p>
+      <p class="status-line pickup-status" id="pickupStatus" role="status"></p>
+      <form id="pickupForm">
+        <label for="pickupInput">Next step</label>
+        <input id="pickupInput" type="text" maxlength="240" autocomplete="off" placeholder="Example: Play my skit and check the timing" aria-describedby="pickupHelp" required>
+        <div class="btn-row">
+          <button type="submit" class="wide-btn">Save my place</button>
+          <button type="button" id="pickupClear" class="wide-btn" hidden>Clear saved step</button>
+        </div>
+      </form>
+      <div id="pickupConfirm" hidden>
+        <p class="help">Clear the step saved on this device?</p>
+        <div class="btn-row">
+          <button type="button" class="wide-btn" id="pickupKeep">Keep it</button>
+          <button type="button" class="wide-btn danger" id="pickupRemove">Clear it</button>
+        </div>
+      </div>
+    </details>
     <p class="help" id="skillHint">With a Gemini key she can act on what you say: "go to the kitchen", "put on some music", "turn the lights red", "change into the corset", "remind me to call mom tomorrow at 5", "what's the weather in St. Pete?"</p>
     <div class="btn-row">
       <button type="button" class="wide-btn" id="speakBtn">Voice: on (tap to turn off)</button>
@@ -116,17 +164,39 @@
     </div>
   </section>
   <section id="wardrobeSection" aria-label="Wardrobe">
-    
+    <div class="style-card" id="avatarModeCard" hidden>
+      <label for="avatarMode">Avatar in the apartment and live wallpaper</label>
+      <select id="avatarMode">
+        <option value="model">3D model (Idle and Walk)</option>
+        <option value="wardrobe">Wardrobe portrait</option>
+      </select>
+      <label for="avatarOutfit">3D outfit</label>
+      <select id="avatarOutfit">
+        <option value="closet">Match her closet (what she's wearing)</option>
+        <option value="original">Original pink top</option>
+        <option value="black-top">Black top</option>
+      </select>
+      <label for="avatarWeapon">Adventure weapon (3D)</label>
+      <select id="avatarWeapon"></select>
+      <p class="help">Her 3D model now wears her closet outfits: tops, bottoms, shoes and tights change colour and pattern, and dresses, gowns, the witch hat and the vampire collar are real 3D pieces that move with her. The weapon is held in her hand for adventure role-play. Hair and makeup still show on the Wardrobe portrait.</p>
+    </div>
     <div class="style-card">
       <label class="check-row"><input type="checkbox" id="autoStyleOn" checked> Let her style herself by the day of the week</label>
       <p class="help">Emo Monday, Grunge Tuesday, Goth Wednesday, Alt Thursday, Going-Out Friday, Scene Saturday, Cozy Sunday — each with a few full looks (outfit, hair and makeup) she rotates week to week, plus holiday looks. After 9 pm she changes into loungewear. Anything you pick yourself wins for the rest of the day.</p>
       <button type="button" class="wide-btn accent" id="styleTodayBtn">Let her pick today's look</button>
     </div>
-    <p class="help">Tap an outfit, a hair colour or a makeup look and she wears it straight away — in here and in her 3D apartment. Outfit, hair and makeup all stack together. Tap a picked shade again to take it off.</p>
+    <p class="help">Tap an outfit, hair colour or makeup look to update her wardrobe portrait. Outfit, hair and makeup stack together. Tap a picked shade again to take it off.</p>
     <div class="preview-wrap">
       <img id="wardrobePreview" src="assets/figure/aimmianna_human_fullbody.png" alt="Wardrobe preview of Aimmianna">
     </div>
     <p id="wardrobeMsg" class="status-line" aria-live="polite"></p>
+
+    <h3>Her closet</h3>
+    <p class="help">Tap anything to try it on. Keep it if you like it, or put it back. Items glow by rarity: grey Common, blue Rare, purple Epic, gold Legendary.</p>
+    <div id="closet" class="closet"></div>
+
+    <details class="classic-lists">
+    <summary>Classic list view</summary>
 
     <h3>Outfits — tap one to dress her in it:</h3>
     <div id="outfitList" class="pick-list"></div>
@@ -149,6 +219,7 @@
     <div id="foundationList" class="pick-list"></div>
     <button type="button" class="wide-btn" data-wardrobe-clear="makeup">Wipe all makeup off</button>
     <button type="button" class="wide-btn accent" id="fullGlamBtn">Full Glam — lips + eyes + blush, all at once</button>
+    </details>
 
     <h3>Take it off — undress her, piece by piece:</h3>
     <p class="help">Taking things off is part of dressing her. Strip one piece, or take everything off and start fresh with just her.</p>
@@ -179,6 +250,31 @@
     <div id="toolList" class="tool-list"></div>
   </section>
   <section id="gamesSection" aria-label="Retro console games">
+    <div class="life-entry ccg-entry">
+      <p class="life-kicker">NEW · CARD GAME</p>
+      <h3>Runway Show</h3>
+      <p>Her closet outfits are cards now. Walk the runway against rivals, win the crowd, and earn better cards.</p>
+      <button type="button" class="wide-btn accent" data-goto="cardsSection">Play Runway Show</button>
+    </div>
+    <div class="life-entry ccg-entry">
+      <p class="life-kicker">NEW · CARD GAME</p>
+      <h3>Card Battles</h3>
+      <p>Two full card games: Dark Duel and Spirit Pals. Build decks, fuse monsters, evolve pals, and battle Aimmianna.</p>
+      <button type="button" class="wide-btn accent" id="playCCG">Play Card Battles</button>
+    </div>
+    <div class="life-entry ccg-entry">
+      <p class="life-kicker">NEW · SPIRIT GAME</p>
+      <h3>Spirit Game</h3>
+      <p>Spirit box radio, ask questions, ouija board, EVP recorder, and an AR lens — driven by your phone's real sensors.</p>
+      <button type="button" class="wide-btn accent" data-goto="spiritSection">Play Spirit Game</button>
+    </div>
+    <div class="life-entry" id="lifeEntry" hidden>
+      <p class="life-kicker">PRIVATE LIFE SIM</p>
+      <h3>Apartment Life</h3>
+      <p>Play as your own character. Work gigs, play together, learn skills, and upgrade the apartment.</p>
+      <button type="button" class="wide-btn accent" id="lifeEnter">Enter private Game Mode</button>
+      <p id="lifeEntryStatus" role="status"></p>
+    </div>
     
     <div class="btn-row tabs" role="tablist">
       <button type="button" id="tabMemory" class="tab active" role="tab">Memory</button>
@@ -217,6 +313,9 @@
       <button type="button" class="wide-btn accent" id="tarotDraw">Draw three cards</button>
       <p class="help">Tarot is just for fun and reflection — 22 Major Arcana, upright or reversed. She reads them out loud.</p>
     </div>
+  </section>
+  <section id="lifeSection" aria-label="Apartment Life">
+    <div id="lifeBody"></div>
   </section>
   <section id="tvSection" aria-label="TV">
     <h3>YouTube</h3>
@@ -357,15 +456,27 @@
     <input type="password" id="aiKeyInput" placeholder="Paste your free Gemini API key here" autocomplete="off">
     <div class="btn-row">
       <button type="button" class="wide-btn" id="aiSave">Save key</button>
+      <button type="button" class="wide-btn" id="aiTest">Test Gemini connection</button>
       <button type="button" class="wide-btn" id="aiRemove">Remove key</button>
     </div>
     <label class="check-row"><input type="checkbox" id="toolsOn" checked> Home skills — she can move rooms, use devices, change outfits, save reminders, memories and rules</label>
     <label class="check-row"><input type="checkbox" id="searchOn" checked> Live web search — weather, news, game tips, real-world facts</label>
     <p class="help">Free key: open aistudio.google.com in your browser → Get API key → Create API key → copy it here. The key never leaves this device except to talk to Google's AI.</p>
 
-    <h3>Her natural voice — free neural (default)</h3>
+    <h3>Her speaking voice</h3>
+    <label class="check-row"><input type="checkbox" id="geminiVoiceOn"> Use Gemini voice for Gemini chat replies</label>
+    <label for="geminiVoice">Gemini voice style</label>
+    <select id="geminiVoice">
+      <option value="Sulafat">Sulafat (warm)</option>
+      <option value="Aoede">Aoede (breezy)</option>
+      <option value="Despina">Despina (smooth)</option>
+    </select>
+    <button type="button" class="wide-btn" id="geminiVoiceTest">Preview Gemini voice</button>
+    <p id="geminiVoiceStatus" class="status-line" aria-live="polite">Gemini speech is off.</p>
+    <p class="help">Uses your saved Gemini API key. When enabled, the text of her AI replies is sent back to Google to generate audio. Internet access and speech quota are required; charges can apply depending on your Google project. The preview sends only a sample line.</p>
+    <h3>Device voice and optional voice server</h3>
     <p id="neuralStatus" class="status-line">Natural voice: Jenny (Microsoft neural) — free, no key needed.</p>
-    <label for="neuralVoice">Neural voice</label>
+    <label for="neuralVoice" id="neuralVoiceLabel">Voice server style</label>
     <select id="neuralVoice">
       <option value="en-US-JennyNeural">Jenny — warm, friendly</option>
       <option value="en-US-AriaNeural">Aria — confident, bright</option>
@@ -387,7 +498,7 @@
       <button type="button" class="wide-btn" id="ttsServerSave">Save server</button>
       <button type="button" class="wide-btn" id="ttsServerReset">Use default</button>
     </div>
-    <p class="help">The natural voice runs through the app's small voice server (server.py, free Microsoft Edge neural voices). On the Android app it uses the built-in voice route instead. If neither is reachable she falls back to the device voice. Paid voices below (Typecast, Fish Audio, ElevenLabs) win over this one when they're set.</p>
+    <p class="help">Jenny and the other server styles need a compatible voice server. Without one, Android uses the device synthesizer. Typecast, Fish Audio, and ElevenLabs stay available if you set them up.</p>
 
     <h3>Her speaking voice — Typecast (free)</h3>
     <p id="typecastStatus" class="status-line">Her speaking voice: Typecast not set — add your Typecast key + voice ID below to hear her AI-made voice (free, 15,000 characters a month).</p>
@@ -452,7 +563,7 @@
     <h3>Live wallpaper (Android)</h3>
     <p id="wallpaperStatus" class="status-line">Live wallpaper: available in the Android app.</p>
     <button type="button" class="wide-btn accent" id="wallpaperBtn">Set her as my live wallpaper</button>
-    <label class="check-row"><input type="checkbox" id="wpHud" checked> Show the room bar and dock on the wallpaper</label>
+    <label class="check-row"><input type="checkbox" id="wpHud" checked> Show Aimmianna's room and activity status on the wallpaper</label>
     <label class="check-row"><input type="checkbox" id="wpVoice"> Let her speak while she's the wallpaper</label>
     <p class="help">Samsung: choose <b>Home screen</b> when Android asks where to set it. One UI only allows photo and video wallpapers on the lock screen, not live ones.</p>
     <div id="batteryBox" hidden>
@@ -465,15 +576,13 @@
     <label class="check-row"><input type="checkbox" id="gyroToggle"> Gyro parallax (tilt to look around)</label>
     <label class="check-row"><input type="checkbox" id="lowPower"> Battery saver (lower resolution, 30 fps)</label>
     <h3>Updates</h3>
+    <p class="help" id="sharedReleaseStatus"></p>
     <p id="updateStatus" class="status-line">Current version.</p>
     <div class="btn-row">
       <button type="button" class="wide-btn accent" id="updateCheck">Check for updates</button>
       <button type="button" class="wide-btn" id="updateNow" hidden>Update now</button>
     </div>
-    <label for="updateUrlInput">Update source (optional)</label>
-    <input type="url" id="updateUrlInput" placeholder="Leave empty for the default (your GitHub repo)" autocomplete="off">
-    <button type="button" class="wide-btn" id="updateUrlSave">Save update source</button>
-    <p class="help">She checks once a day. Web/iPhone: updates arrive automatically — you'll get a "Reload" prompt. Android: she downloads the new APK and Android asks you to install it. Your memories and settings are kept.</p>
+    <p class="help">Software releases are approved on your Windows master computer. This device can check for approved releases but cannot change the release source or install anything automatically.</p>
     <h3>Her home folder</h3>
     <p class="help">Everything that makes her <em>her</em> — memories, rules, skills, bond, notes, calendar, reminders, wardrobe, album photos and settings — lives in one file, <b>aimmianna-data.json</b>, inside a folder named <b>Aimmianna</b>. She saves it automatically and keeps a dated copy each day in <b>Aimmianna/backups</b> (last 14 days).</p>
     <div class="home-card">
@@ -486,15 +595,24 @@
     </div>
     <p id="homeHelp" class="help"></p>
     <details class="home-sync">
-      <summary>Sync through her server (iPhone + every device)</summary>
-      <p class="help">When you run her server (server.py), she can also keep her file on that computer at <b>aimmianna-home/aimmianna-data.json</b>, next to server.py. Pick a private home key — use the same key on your iPhone, phone and tablet and they all share one Aimmianna.</p>
-      <label for="homeKeyInput">Home key (private, at least 8 characters)</label>
-      <input type="password" id="homeKeyInput" placeholder="Your private home key" autocomplete="off">
-      <div class="btn-row">
-        <button type="button" class="wide-btn" id="homeKeySave">Turn on server sync</button>
-        <button type="button" class="wide-btn" id="homeKeyOff">Turn off</button>
+      <summary>Shared companion memory (iPhone + Android)</summary>
+      <p class="help">Your phones share Aimmianna’s saved memories and rules, locked so only your phones can read them. Chats, photos, game saves and keys stay on each phone.</p>
+      <label for="memoryRelay">Your Aimmianna web address</label>
+      <input type="url" id="memoryRelay" placeholder="https://your-site.vercel.app" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div id="memoryUnlinked">
+        <p class="help"><b>First phone:</b> tap Start linking. <b>Second phone:</b> type the code it shows.</p>
+        <div class="btn-row"><button type="button" class="wide-btn" id="memoryStart">Start linking (first phone)</button></div>
+        <label for="memoryShort">Code from your other phone</label>
+        <input type="text" id="memoryShort" placeholder="K7M2-Q9TX" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <div class="btn-row"><button type="button" class="wide-btn" id="memoryJoin">Join (second phone)</button></div>
       </div>
-      <p id="homeSyncStatus" class="status-line">Server sync: off</p>
+      <p id="memoryCodeBox" class="pair-code" hidden></p>
+      <div class="btn-row">
+        <button type="button" class="wide-btn" id="memoryAdd" hidden>Link another phone</button>
+        <button type="button" class="wide-btn" id="memorySync" hidden>Sync now</button>
+        <button type="button" class="wide-btn" id="memoryOff" hidden>Disconnect this device</button>
+      </div>
+      <p id="memorySyncStatus" class="status-line" role="status">Not linked. Your memory stays on this device.</p>
     </details>
     <h3>Backup file</h3>
     <div class="btn-row">
@@ -503,7 +621,7 @@
     </div>
     <input type="file" id="backupFile" accept="application/json,.json" hidden>
     <p class="help">A copy holds everything above plus your saved keys — keep it private. On iPhone, "Save a copy" opens the share sheet: choose <b>Save to Files</b>, then the <b>Aimmianna</b> folder in iCloud Drive or On My iPhone.</p>
-    <p id="appVersion" class="status-line">Aimmianna iPhone PWA v1.0 — keys live on this device only, in localStorage. Nothing is ever hardcoded.</p>
+    <p id="appVersion" class="status-line">Aimmianna 3D v2.4.3</p>
     <p class="help">iPhone: in Safari tap Share, then "Add to Home Screen". Android: install the Aimmianna APK.</p>
   </section>
   </div>
@@ -592,5 +710,24 @@
 <audio id="voiceEl" playsinline preload="none"></audio>
 
 <script type="module" src="app.js"></script>
+<dialog id="signalCameraDialog" aria-labelledby="signalCameraTitle">
+  <header class="signal-camera-header">
+    <div><h2 id="signalCameraTitle">Late-Night Signals</h2><p id="signalCameraStatus" role="status"></p></div>
+    <button type="button" id="signalCameraClose" class="life-button" autofocus>Close camera</button>
+  </header>
+  <div id="signalCameraFrame" class="signal-camera-frame">
+    <video id="signalCameraVideo" autoplay muted playsinline aria-hidden="true"></video>
+    <div id="signalCameraRadio" class="signal-camera-radio" aria-hidden="true">
+      <i></i><strong>Midnight Radio</strong><span>• • •</span>
+    </div>
+    <button type="button" id="signalCameraPlace" aria-label="Place radio overlay. Tap or use the arrow keys." disabled></button>
+  </div>
+  <footer class="signal-camera-footer">
+    <p id="signalCameraReadout"></p>
+    <button id="signalCameraMark" type="button" class="life-button" hidden>Mark this moment</button>
+    <p id="signalCameraMarkStatus" role="status"></p>
+    <p>Tap the view to place the radio. It follows the screen, not a real surface.</p>
+  </footer>
+</dialog>
 </body>
 </html>
