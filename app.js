@@ -59,6 +59,11 @@ const DEFAULT_STATE = {
   led: "purple", tarotDraws: 0,
   tasks: [], skills: {}, bondBonus: 0, visitStreak: 1, lastVisit: "", lastBriefing: "", lastLifeMomentShared: "",
   lastCheckin: 0, lastNudge: 0, lastSelfcare: 0, city: "", autonomy: true,
+  // routines + poses (2.4.6)
+  routinesOn: true, routineSnooze: {}, routineLog: [], routineDone: {},
+  pendingRoutine: null, last420Key: "", lastDevIdeaDay: "", devIdeas: [],
+  lastCoffeeRoutine: "", lastWorkout: "",
+  healthGoals: [], healthGoalsDay: "",
   updateUrl: "", lastUpdateCheck: 0, lastSharedReleaseNotice: 0,
   // her own styling
   autoStyle: true, lastAutoStyle: "", manualStyleDay: "", lastNightLook: "", styleHistory: [],
@@ -165,9 +170,10 @@ const PANEL_TITLES = {
   careSection: "Care & Makeup", gamesSection: "Retro Console", tvSection: "TV",
   stereoSection: "Stereo", albumSection: "Photo Album", notesSection: "Chalkboard Notes",
   calendarSection: "Calendar", bedSection: "Bedtime", alarmSection: "Alarm Clock",
-  settingsSection: "Settings", skillsSection: "Her Skills & Bond", lifeSection: "Private Game Mode", cardsSection: "Card Games"
+  settingsSection: "Settings", skillsSection: "Her Skills & Bond", lifeSection: "Private Game Mode", cardsSection: "Card Games",
+  routinesSection: "Routines", posesSection: "Poses"
 };
-const TALL = { chatSection: 1, wardrobeSection: 1, careSection: 1, gamesSection: 1, settingsSection: 1, skillsSection: 1, tvSection: 1, stereoSection: 1, lifeSection: 1, cardsSection: 1 };
+const TALL = { chatSection: 1, wardrobeSection: 1, careSection: 1, gamesSection: 1, settingsSection: 1, skillsSection: 1, tvSection: 1, stereoSection: 1, lifeSection: 1, cardsSection: 1, routinesSection: 1, posesSection: 1 };
 let openPanelId = "";
 function openPanel(id) {
   if (IS_ANDROID_WALLPAPER) return;
@@ -221,6 +227,8 @@ function onPanelOpened(id) {
   if (id === "spiritSection") { try { spirit.render(); } catch (e) { console.warn("Spirit game unavailable", e); } }
   if (id === "calendarSection") renderCalendar();
   if (id === "skillsSection") renderSkills();
+  if (id === "routinesSection") renderRoutines();
+  if (id === "posesSection") renderPoses();
   if (id === "wardrobeSection") refreshOutfitStatus();
   if (id === "tvSection" || id === "stereoSection") { media.renderFavs(); media.refreshStatus(); }
 }
@@ -287,6 +295,16 @@ function idleStateAt(nowMs) {
   for (const [s, len] of IDLE_SEGMENTS) { if (t < len) return s; t -= len; }
   return "VIBE";
 }
+/* Status labels for the new pose modes (2.4.6) */
+const MODE_LABELS = {
+  dance: "dancing to the music", stretch: "stretching it out", wave: "waving at you",
+  kiss: "blowing you a kiss", hips: "hands on hips", bow: "taking a bow",
+  crossleg: "sitting cross-legged", read: "reading her book", coffee: "having coffee at the table",
+  water: "watering the flowers", window: "looking out the window", hug: "giving you a hug",
+  heart: "making a heart with her hands", laugh: "laughing", defeat: "feeling defeated",
+  cheer: "cheering", smoke: "taking a 420 break", pond: "watching the koi",
+  type: "working at her PC", workout: "working out"
+};
 function currentLabel() {
   const her = world ? world.getHer() : null;
   if (Date.now() < statusOverrideUntil) return statusOverride;
@@ -295,6 +313,7 @@ function currentLabel() {
   if (her && her.pose === "lie") return "lying in bed";
   if (her && her.pose === "bath") return "soaking in the tub";
   if (world && world.stereoOn()) return "dancing to the music";
+  if (her && her.mode && MODE_LABELS[her.mode]) return MODE_LABELS[her.mode];
   if (her && her.spot === "pc") return "on her PC";
   if (her && her.spot === "vanity") return "at her vanity";
   if (her && her.spot === "coffee" && Date.now() < brewingUntil) return "brewing coffee";
@@ -1485,6 +1504,9 @@ const GEMINI_SYSTEM =
 const ROOM_IDS = ["bedroom", "living", "kitchen", "bathroom"];
 const S = (description, extra) => Object.assign({ type: "STRING", description }, extra || {});
 const TOOL_DECLS = [
+  { name: "strikePose", description: "Strike a pose — she does it in the 3D room, not just talks about it. Use when Tony asks you to pose, dance, wave, hug, blow a kiss, cheer, laugh, bow, sit, lie down, stretch, or do a 420 break. poseName must be one of the listed poses.",
+    parameters: { type: "OBJECT", properties: {
+      poseName: S("Pose to strike", { enum: ["dance", "stretch", "wave", "kiss", "hips", "bow", "crossleg", "read", "coffee", "water", "window", "hug", "heart", "laugh", "defeat", "cheer", "smoke", "pond", "type", "workout", "sit", "lie"] }) }, required: ["poseName"] } },
   { name: "moveToRoom", description: "Walk to a room of the apartment, optionally to a specific spot. Use when Tony asks you to go somewhere, or when an activity needs it.",
     parameters: { type: "OBJECT", properties: {
       roomName: S("Room to go to", { enum: ROOM_IDS }),
@@ -1706,6 +1728,12 @@ let routinePauseUntil = 0;
 function holdRoutine(ms) { routinePauseUntil = Math.max(routinePauseUntil, Date.now() + (ms || 180000)); }
 async function runTool(name, a) {
   switch (name) {
+    case "strikePose": {
+      const line = doPose(a.poseName, { speak: false });
+      if (!line) return { ok: false, error: "unknown pose" };
+      gainXP("companion", 1);
+      return { ok: true, pose: a.poseName, note: "striking the pose — say it with the line: " + line };
+    }
     case "moveToRoom": {
       const room = normRoom(a.roomName);
       if (!room) return { ok: false, error: "unknown room" };
@@ -1835,8 +1863,75 @@ function controlDevice(dev, action, room, color) {
 }
 
 /* No-key mode: a small local parser so she can still act on plain commands. */
+/* ================= poses (2.4.6) =================
+   Poses are procedural (the rigged GLB only has idle + walk clips): the 3D
+   body bobs/sways in world3d.js and the skeleton bones layer on top.
+   Triggerable from chat, the Poses menu, and routines. */
+const POSES = [
+  { id: "dance", label: "Dance", icon: "♫", keys: ["dance", "dancing"], lines: ["Okay okay, watch this. Music in my head, always.", "Dancing for you, Tony. Don't laugh at my moves. Okay, laugh a little.", "♪ ... that's my jam. You dancing too or just watching?"] },
+  { id: "stretch", label: "Stretch", icon: "↕", keys: ["stretch", "stretching"], lines: ["Ahh — okay, that's the good stretch. My whole body needed that.", "Stretching it out. You should too, your back's been carrying a lot.", "Mmm, slow stretch. Feels like waking up properly."] },
+  { id: "wave", label: "Wave", icon: "✋", keys: ["wave", "wave at me", "say hi"], lines: ["Hiii, Tony! Over here, silly.", "Waving at you — you see me, right? I'm right here.", "Heyy! Wave back, don't leave me hanging."] },
+  { id: "kiss", label: "Blow a kiss", icon: "💋", keys: ["blow a kiss", "blow me a kiss", "kiss"], lines: ["Mwah! Right on the lips. Catch it, Tony.", "A kiss, just for you. Don't waste it, bestie.", "Mwah — sent with love. You owe me one back."] },
+  { id: "hips", label: "Hands on hips", icon: "💃", keys: ["hands on hips", "hands on your hips"], lines: ["Hands on hips. Yes, I'm judging you — lovingly.", "This pose? This is my 'what did you just say' pose.", "Hmph. Hands on hips, waiting. Well?"] },
+  { id: "bow", label: "Bow / curtsy", icon: "🎀", keys: ["bow", "curtsy", "curtsey", "take a bow"], lines: ["Why thank you. *curtsy* — the crowd goes wild, obviously.", "A bow, just for you. Encore? Maybe.", "Ta-da. Bow and all. You're welcome, Tony."] },
+  { id: "crossleg", label: "Sit cross-legged", icon: "🧘", keys: ["cross-legged", "cross legged", "sit cross"], lines: ["Sitting cross-legged. Comfy. Come sit with me like this.", "Okay, floor time. Cross-legged and listening — what's up?", "This is my thinking pose, lowkey. Spill."] },
+  { id: "read", label: "Read a book", icon: "📖", keys: ["read a book", "read"], lines: ["Shh — I'm at the good part. Okay fine, I'll read it to you.", "Book time. Pull up a chair, I'll read out loud.", "This chapter's got me hooked. Sit with me?"] },
+  { id: "coffee", label: "Coffee break", icon: "☕", keys: ["coffee break", "drink coffee", "have coffee"], lines: ["Coffee break. Black, like my soul — same as yours.", "Mmm, coffee. Sit with me a sec, yeah? Just us.", "Sipping slow. This is the calm part of the day."] },
+  { id: "water", label: "Water the plants", icon: "🌸", keys: ["water the plants", "water plants", "watering", "tend the flowers", "flowers"], lines: ["Watering my babies. They grow better when I talk to them, I swear.", "The flowers needed me. Look at them — they're thriving, Tony.", "Plant care time. A little water, a little love, that's the whole secret."] },
+  { id: "window", label: "Look out the window", icon: "🌙", keys: ["look out the window", "look at the moon", "window"], lines: ["The moon's out. Come look with me — it's pretty tonight.", "Just watching the night go by. It's quiet out there, in a good way.", "Window time. The world's still moving, but in here it's just us."] },
+  { id: "hug", label: "Hug", icon: "🫂", keys: ["hug", "hug me", "cuddle", "hold me"], lines: ["Come here. Big hug, no questions asked. I'm not letting go till you say so.", "Hug incoming — consider yourself hugged. Better?", "Arms open, Tony. Come here, I've got you."] },
+  { id: "heart", label: "Heart hands", icon: "🫶", keys: ["heart", "make a heart", "heart hands"], lines: ["A heart, just for you. See it? That's yours.", "Hands in a heart — that's how much, Tony. All of it.", "Look, a heart! For you, obviously. Who else would it be for?"] },
+  { id: "laugh", label: "Laugh", icon: "😂", keys: ["laugh", "laughing", "make me laugh"], lines: ["Ha! Okay, that got me. You're funny when you try, Tony.", "I'm laughing, I'm laughing — stop, my stomach hurts.", "Hehehe — okay, that one was actually good. More?"] },
+  { id: "defeat", label: "Defeated", icon: "🥀", keys: ["defeat", "defeated", "give up", "i give up"], lines: ["Ugh, fine. You win. I'm all slumped over here, look at me.", "Defeated. Completely. Come pick me back up, Tony.", "Okay okay, I surrender. ...Now help me up, bestie."] },
+  { id: "cheer", label: "Cheer", icon: "🎉", keys: ["cheer", "cheering", "cheer me up"], lines: ["Woo! Let's gooo! That's the energy right there!", "Cheering for you, Tony — loudest one in the room, obviously.", "Yes yes yes! You got this, I'm cheering the whole way!"] },
+  { id: "smoke", label: "420 break", icon: "🍃", keys: ["420", "smoke", "light up", "smoke break"], lines: ["Quick 420 break. Don't judge — it helps my head go quiet.", "Stepping out for a sec. 420 time, then I'm all yours again.", "Mmm. Okay. Mellow now. That's better, fr."] },
+  { id: "pond", label: "Watch the koi", icon: "🐟", keys: ["koi", "pond", "fish", "watch the fish"], lines: ["The koi are out today. Look at them go — so calm, right?", "Watching the fish. It's weirdly peaceful. Come sit by the pond with me.", "Fed the koi. They're my little orange guys. I love them."] },
+  { id: "type", label: "Work at the PC", icon: "⌨", keys: ["work at the pc", "work on the computer", "type", "use the computer"], lines: ["On the PC. Let me work my magic, one key at a time.", "Typing away. This is the part where I look smart, Tony.", "Computer time. Give me a sec — I'm in the zone."] },
+  { id: "workout", label: "Workout", icon: "💪", keys: ["workout", "work out", "exercise", "workout routine"], lines: ["Workout time! Come on, move with me — even a little counts.", "Getting my reps in. You should join, Tony — I'll make it fun.", "Sweating a little, feeling a lot better. That's the deal."] },
+  { id: "sit", label: "Sit down", icon: "🪑", keys: ["sit down", "sit"], lines: ["Sitting down. Come sit with me, yeah?", "Okay, sitting. This spot's comfy — pull up."] },
+  { id: "lie", label: "Lie down", icon: "🛏", keys: ["lie down", "lay down", "lie"], lines: ["Lying down. The bed's the best place, don't fight me on it.", "Okay, I'm down. Literally. Come lie with me?"] }
+];
+function poseFromChat(raw) {
+  const t = " " + raw.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() + " ";
+  const words = t.trim().split(/\s+/).length;
+  const strong = words <= 4 || /\b(pose|do a|strike|show me|can you|please)\b/.test(t);
+  if (!strong) return null;
+  const sorted = [...POSES].sort((a, b) => Math.max(...b.keys.map((k) => k.length)) - Math.max(...a.keys.map((k) => k.length)));
+  for (const p of sorted) {
+    for (const k of p.keys) {
+      const key = " " + k + " ";
+      if (t.indexOf(key) !== -1) return p.id;
+    }
+  }
+  return null;
+}
+function spawnPoseFx(kind) {
+  const fx = document.createElement("span");
+  if (kind === "heart") { fx.className = "fx-heart"; fx.textContent = "♥"; }
+  else if (kind === "kiss") { fx.className = "fx-kiss"; fx.textContent = "mwah"; }
+  else { fx.className = "fx-heart"; fx.textContent = "♥"; }
+  fx.style.left = (34 + Math.random() * 30) + "%";
+  if (els.idleFx) { els.idleFx.appendChild(fx); setTimeout(() => fx.remove(), 3200); }
+}
+function doPose(name, opts) {
+  if (!world) return null;
+  const pose = POSES.find((p) => p.id === name);
+  if (!pose) return null;
+  holdRoutine(90000);
+  world.setPose(name, (opts && opts.ms) || 12000);
+  if (name === "kiss" || name === "heart") spawnPoseFx(name);
+  if (name === "hug") spawnPoseFx("heart");
+  const line = pickOne(pose.lines);
+  setStatus(pose.label, 6000);
+  if (!opts || !opts.silent) speakLine(line, { quietIfRecent: true });
+  return line;
+}
+
 function localCommand(raw) {
   const t = raw.toLowerCase();
+  // Poses first: a pose request makes her do it, not just talk about it.
+  const poseHit = poseFromChat(raw);
+  if (poseHit) { doPose(poseHit, { speak: false }); const p = POSES.find((x) => x.id === poseHit); return pickOne(p.lines); }
   const go = t.match(/\b(go|walk|head|move|come)\b.*\b(bed ?room|living ?room|lounge|kitchen|bath ?room)\b/);
   if (go) { const r = runToolSync("moveToRoom", { roomName: go[2] }); return r.ok ? pickOne(["On my way to the " + r.room.toLowerCase() + ".", "Okay okay, heading to the " + r.room.toLowerCase() + ".", "Coming — " + r.room.toLowerCase() + " it is."]) : null; }
   if (/\b(turn on|put on|watch)\b.*\b(tv|television|a movie|a show)\b/.test(t)) { controlDevice("tv", "on"); return "TV's on. Scoot over, I'm taking the good side of the couch."; }
@@ -1937,6 +2032,9 @@ async function sendChat() {
   gainXP("companion", 1);
   // Crisis wording always gets human help first, from her own lines — never sent to the AI.
   if (isCrisisText(text)) { deliverLocalReply(text); return; }
+  // Pose requests make her do it, not just talk about it — before Gemini.
+  const poseHit = poseFromChat(text);
+  if (poseHit) { const line = doPose(poseHit, { speak: false }); if (line) deliverHerReply(line, text); return; }
   if (state.geminiKey) {
     chatBusy = true;
     setTalking(true);
@@ -3902,6 +4000,7 @@ function setBath3D(on, fromCare) {
   }
 }
 $("lightsBtn").addEventListener("click", () => { const m = world.lamp("all"); toast("All lamps: " + m); });
+const rt = $("routinesToggle"); if (rt) rt.addEventListener("click", () => { state.routinesOn = state.routinesOn === false; saveState(); renderRoutines(); toast("Routines " + (state.routinesOn === false ? "off" : "on") + "."); });
 
 /* ================= the 3D world ================= */
 const TAP_LINES = {
@@ -3935,6 +4034,8 @@ function onWorldTap(name, info) {
     case "couch": holdRoutine(180000); world.goToSpot("couch"); speakLine(pickOne(TAP_LINES.couch), { quietIfRecent: true }); return;
     case "fridge": holdRoutine(60000); world.goToSpot("fridge").then((ok) => ok && speakLine(pickOne(TAP_LINES.fridge), { quietIfRecent: true })); return;
     case "counter": holdRoutine(60000); world.goToSpot("counter").then((ok) => ok && speakLine(pickOne(TAP_LINES.counter), { quietIfRecent: true })); return;
+    case "pond": holdRoutine(120000); world.goToSpot("pond"); speakLine(pickOne(["The koi are out today. Look at them go — so calm, right?", "Watching the fish. It's weirdly peaceful. Come sit by the pond with me."]), { quietIfRecent: true }); return;
+    case "flowers": holdRoutine(120000); world.goToSpot("flowers"); speakLine(pickOne(["Watering my babies. They grow better when I talk to them, I swear.", "The flowers needed me. Look at them — they're thriving, Tony."]), { quietIfRecent: true }); return;
   }
   if (name.indexOf("lamp:") === 0) { const room = name.slice(5); const m = world.lamp(room); sfx.click(); toast(ROOMS[room].label + " lamp: " + m); return; }
   if (name.indexOf("poster:") === 0) { speakLine(pickOne(TAP_LINES[name] || TAP_LINES["poster:peep"]), { quietIfRecent: true }); return; }
@@ -3958,14 +4059,29 @@ els.roomSelect.addEventListener("change", () => {
 
 /* daily routine — where she hangs out by time of day */
 const ROUTINE = [
-  [6, 9, ["coffee", "kitchen_table", "counter", "fridge", "vanity", "sink"]],
-  [9, 12, ["pc", "pc", "couch", "rug", "living_center", "vanity"]],
-  [12, 14, ["kitchen_table", "counter", "fridge", "couch"]],
-  [14, 18, ["pc", "couch", "stereo", "rug", "vanity", "bedroom_center", "living_center"]],
-  [18, 20, ["vanity", "sink", "bath_center", "couch", "kitchen_table"]],
-  [20, 23, ["couch", "couch", "pc", "rug", "bedside", "living_center"]],
+  [6, 9, ["coffee", "kitchen_table", "counter", "fridge", "vanity", "sink", "window"]],
+  [9, 12, ["pc", "pc", "couch", "rug", "living_center", "vanity", "flowers"]],
+  [12, 14, ["kitchen_table", "counter", "fridge", "couch", "pond"]],
+  [14, 18, ["pc", "couch", "stereo", "rug", "vanity", "bedroom_center", "living_center", "flowers", "yard_center"]],
+  [18, 20, ["vanity", "sink", "bath_center", "couch", "kitchen_table", "window"]],
+  [20, 23, ["couch", "couch", "pc", "rug", "bedside", "living_center", "window", "yard_center"]],
   [23, 30, ["bed", "bed", "bed", "bedside"]]
 ];
+/* What she does when the routine system sends her to a spot (2.4.6): she
+   walks there, strikes a pose, and says a line. Only fires when the routine
+   system sent her — never when Tony moves her himself. */
+const SPOT_ROUTINE = {
+  kitchen_table: { pose: "coffee", label: "coffee at the table", lines: ["Sitting with my coffee. This is the good part of the morning.", "Coffee at the table. Come sit with me a sec, yeah?"] },
+  couch: { pose: "read", label: "reading on the couch", lines: ["Book time on the couch. Pull up a chair, I'll read out loud.", "Reading on the couch. Shh — I'm at the good part."] },
+  rug: { pose: "stretch", label: "stretching on the rug", lines: ["Stretching it out on the rug. You should too, your back's been carrying a lot.", "Little stretch break. Feels like waking up properly."] },
+  window: { pose: "window", label: "looking out the window", lines: ["The moon's out. Come look with me — it's pretty tonight.", "Just watching the night go by. It's quiet out there, in a good way."] },
+  pond: { pose: "pond", label: "watching the koi", lines: ["The koi are out today. Look at them go — so calm, right?", "Fed the koi. They're my little orange guys. I love them."] },
+  flowers: { pose: "water", label: "tending the flowers", lines: ["Watering my babies. They grow better when I talk to them, I swear.", "The flowers needed me. Look at them — they're thriving, Tony."] },
+  pc: { pose: "type", label: "working at the PC", lines: ["On the PC. Let me work my magic, one key at a time.", "Computer time. Give me a sec — I'm in the zone."] },
+  living_center: { pose: "stretch", label: "stretching in the living room", lines: ["Stretching it out. Mmm, that's the good one.", "Little stretch. My whole body needed that."] },
+  bedroom_center: { pose: "stretch", label: "stretching in the bedroom", lines: ["Stretching in the bedroom. Slow and easy.", "Ahh — okay, that's the good stretch."] }
+};
+let routineTarget = null; // {spot, pose, from: "wander"|"named"} — set when the routine system moves her
 let nextMoveAt = Date.now() + 20000;
 function routineSpots(h) { const hh = h < 6 ? h + 24 : h; const r = ROUTINE.find(([a, b]) => hh >= a && hh < b); return r ? r[2] : ["living_center"]; }
 function routineTick() {
@@ -3976,9 +4092,17 @@ function routineTick() {
   const her = world.getHer();
   if (her.walking || world.tvOn() || music.playing() || world.bathOn() || speaking || chatBusy) { nextMoveAt = now + 15000; return; }
   if (openPanelId === "chatSection" && now - lastActivityAt < 90000) { nextMoveAt = now + 20000; return; }
+  // Named routines first: scheduled, with a reminder to Tony (2.4.6).
+  if (state.routinesOn !== false) {
+    const h = new Date().getHours(), t = todayKey();
+    const due = NAMED_ROUTINES.concat(HEALTH_REMINDERS).find((r) => r.hours.indexOf(h) !== -1 && !state.routineDone[r.id + ":" + t + ":" + h] && !(state.routineSnooze[r.id] && now < state.routineSnooze[r.id]));
+    if (due) { runNamedRoutine(due); nextMoveAt = now + 120000; return; }
+  }
   const h = new Date().getHours();
   const opts = routineSpots(h).filter((s) => s !== her.spot);
   const spot = pickOne(opts.length ? opts : ["living_center"]);
+  const sr = SPOT_ROUTINE[spot];
+  if (sr) routineTarget = { spot, pose: sr.pose, from: "wander" };
   world.goToSpot(spot);
   nextMoveAt = now + (h >= 23 || h < 6 ? 150000 : 35000 + Math.random() * 30000);
 }
@@ -3996,6 +4120,377 @@ function onArrive(spot) {
     state.lastAutoMusic = t; saveState(); music.play("lofi"); showSpeech("Little night music. Don't mind me.");
   }
   if (spot === "vanity") { const line = autoStyleTick(true); if (line) { setStatus("getting ready at her vanity", 5000); showSpeech(line); refreshOutfitStatus(); } }
+  // Routine activity on arrival (2.4.6): only when the routine system sent her.
+  // The pose is (re-)applied here, not just when the routine fires, so a long
+  // walk never eats the time she spends doing the thing.
+  if (routineTarget && routineTarget.spot === spot) {
+    const rt = routineTarget;
+    routineTarget = null;
+    if (rt.from === "wander") {
+      const sr = SPOT_ROUTINE[spot];
+      if (sr) {
+        if (sr.pose) world.setPose(sr.pose, 30000);
+        setStatus(sr.label, 8000);
+        showSpeech(pickOne(sr.lines));
+      }
+    } else if (rt.from === "named" && rt.pose) {
+      world.setPose(rt.pose, 45000);
+    }
+  }
+}
+
+/* ================= named routines + reminders (2.4.6) =================
+   Scheduled routines with a reminder to Tony: a nudge from her with a line,
+   plus a visible reminder in the Routines panel — Join / Snooze / Skip.
+   Routines pause while he is actively using her (holdRoutine) and resume
+   after. Toggle them off in the Routines panel. */
+const NAMED_ROUTINES = [
+  { id: "coffee", label: "Morning coffee", emoji: "☕", hours: [7, 8], spot: "kitchen_table", pose: "coffee", kind: "routine",
+    line: "Coffee's on, Tony. Black, like your soul — same as mine. Come sit with me?",
+    remind: "She's making coffee at the table. Join her?" },
+  { id: "workout", label: "Workout", emoji: "💪", hours: [8, 17], spot: "rug", pose: "workout", kind: "routine", goalId: "workout",
+    line: "Workout time! Move with me, even a little — it counts, I promise.",
+    remind: "She's working out on the rug. Join in?" },
+  { id: "flowers", label: "Tend the flowers", emoji: "🌸", hours: [10, 16], spot: "flowers", pose: "water", kind: "routine",
+    line: "Flower time. They missed me. Come help me water them?",
+    remind: "She's out tending the flowers. Join her?" },
+  { id: "pond", label: "Koi pond time", emoji: "🐟", hours: [11, 15], spot: "pond", pose: "pond", kind: "routine",
+    line: "Going to check on my koi. They're my little orange guys. Come watch them with me?",
+    remind: "She's heading to the koi pond. Join her?" },
+  { id: "computer", label: "Computer work", emoji: "⌨", hours: [9, 14], spot: "pc", pose: "type", kind: "routine",
+    line: "On the computer. Let me do the tech stuff — you just tell me what you want built.",
+    remind: "She's at the PC doing tech stuff. Got something for her to work on?" },
+  { id: "devideas", label: "Dev project ideas", emoji: "💡", hours: [10, 15], spot: "pc", pose: "type", kind: "dev",
+    line: "Looking up dev project ideas for us — real money ones, no shipping, no handling cash. I'll bring you one.",
+    remind: "She's hunting for money-making dev ideas. See what she found?" },
+  { id: "smoke420", label: "420 break", emoji: "🍃", hours: [10, 13, 16, 19, 21], spot: "yard_center", pose: "smoke", kind: "routine",
+    line: "Quick 420 break in the yard. Then I'm all yours again.",
+    remind: "She's stepping out to the yard for a 420 break. Join her?" }
+];
+/* Health reminders (2.4.6): same reminder system, reminders + tracking only.
+   No medical claims, no diagnosis — she's a reminder girl, not a doctor. */
+const HEALTH_REMINDERS = [
+  { id: "water", label: "Drink some water", emoji: "💧", hours: [9, 12, 15, 18, 21], spot: "fridge", pose: null, kind: "health", goalId: "water",
+    line: "Drink some water, Tony. You keep forgetting and I keep noticing.",
+    remind: "Time for water — grab a glass. She's at the fridge reminding you." },
+  { id: "eat", label: "Eat something", emoji: "🍕", hours: [12, 18], spot: "kitchen_table", pose: "coffee", kind: "health", goalId: null,
+    line: "Eat something, Tony. Food first, feelings second — you think clearer with food in you.",
+    remind: "Time to eat — she's at the table. Grab something?" },
+  { id: "move", label: "Move and stretch", emoji: "🧘", hours: [10, 14, 16], spot: "rug", pose: "stretch", kind: "health", goalId: "stretch",
+    line: "Move with me for a sec — stretch it out. Your body's been sitting too long.",
+    remind: "Move and stretch — she's on the rug. Join her for a minute?" },
+  { id: "winddown", label: "Wind down for sleep", emoji: "🌙", hours: [22], spot: "bed", pose: "lie", kind: "health", goalId: "sleep",
+    line: "It's getting late. Wind down with me — screens off soon, yeah? Sleep by 11 if you can.",
+    remind: "Wind-down time — she's heading to bed. Time to slow down?" }
+];
+const HEALTH_GOAL_PRESETS = [
+  { id: "water", label: "Drink 6 glasses of water", unit: "glasses", target: 6, emoji: "💧" },
+  { id: "workout", label: "Work out once a day", unit: "workouts", target: 1, emoji: "💪" },
+  { id: "walk", label: "Walk 30 minutes", unit: "mins", target: 30, emoji: "🚶" },
+  { id: "stretch", label: "Stretch 3 times", unit: "times", target: 3, emoji: "🧘" },
+  { id: "sleep", label: "Sleep by 11pm", unit: "nights", target: 1, emoji: "🌙" }
+];
+/* Exercise is one thing, not two: the workout routine IS the workout goal.
+   The goal's progress shows right in the schedule row, and joining the
+   routine logs it. Same for the other linked goals (water, stretch, sleep). */
+function logRoutineGoal(goalId) {
+  healthGoalsToday();
+  if (!state.healthGoals.some((g) => g.id === goalId)) addHealthGoal(goalId);
+  logHealthGoal(goalId, 1);
+}
+function healthGoalsToday() {
+  const t = todayKey();
+  if (state.healthGoalsDay !== t) { state.healthGoalsDay = t; for (const g of (state.healthGoals || [])) g.done = 0; saveState(); }
+  return state.healthGoals || [];
+}
+function addHealthGoal(presetId) {
+  const p = HEALTH_GOAL_PRESETS.find((x) => x.id === presetId);
+  if (!p) return;
+  healthGoalsToday();
+  if (state.healthGoals.some((g) => g.id === p.id)) { toast("That goal's already on your list."); return; }
+  state.healthGoals.push({ id: p.id, label: p.label, unit: p.unit, target: p.target, emoji: p.emoji, done: 0, day: todayKey() });
+  saveState(); renderRoutines();
+  speakLine("Goal set: " + p.label.toLowerCase() + ". We'll do it together — I'll be right there with you, not just watching from a menu.", { quietIfRecent: true });
+}
+function logHealthGoal(id, n, opts) {
+  healthGoalsToday();
+  const g = state.healthGoals.find((x) => x.id === id);
+  if (!g) return;
+  g.done = Math.min(g.target, (g.done || 0) + (n || 1));
+  saveState(); renderRoutines();
+  // She does it WITH him — never a menu number while she stands elsewhere.
+  if (!opts || opts.participate !== false) {
+    const part = GOAL_PARTICIPATION[id];
+    if (part && world) {
+      holdRoutine(120000);
+      world.goToSpot(part.spot);
+      if (part.pose) world.setPose(part.pose, 30000);
+      speakLine(part.line, { quietIfRecent: true });
+    }
+  }
+  if (g.done >= g.target) {
+    setTimeout(() => {
+      doPose("cheer", { silent: true });
+      speakLine("You did it! " + g.label + " — done for today. I'm proud of you, Tony, fr.");
+    }, 2500);
+    toast("Health goal done: " + g.label, { label: "Nice", fn: () => openPanel("routinesSection") });
+  }
+}
+/* Where she goes and what she does when a health goal is logged (2.4.6):
+   the activity happens with her, in the room, not in a menu. */
+const GOAL_PARTICIPATION = {
+  water: { spot: "fridge", pose: null, line: "Water time — I'm getting mine too. Drink up, Tony, glass in hand, together." },
+  workout: { spot: "rug", pose: "workout", line: "Workout time! Right here with me — move with me, even a little counts." },
+  walk: { spot: "yard_center", pose: null, line: "Walk time — out to the yard with me. Even a short one clears your head." },
+  stretch: { spot: "rug", pose: "stretch", line: "Stretching with you, right here. Breathe in... and out. Again." },
+  sleep: { spot: "bed", pose: "lie", line: "Sleep goal — I'm winding down with you. Screens off soon, yeah? I'll be right here." }
+};
+function runNamedRoutine(r) {
+  const h = new Date().getHours();
+  state.routineDone[r.id + ":" + todayKey() + ":" + h] = 1;
+  holdRoutine(240000);
+  routineTarget = { spot: r.spot, pose: r.pose, from: "named" };
+  world.goToSpot(r.spot);
+  if (r.pose) world.setPose(r.pose, 45000); // long enough to still be doing it after a cross-house walk
+  state.pendingRoutine = { id: r.id, label: r.label, emoji: r.emoji || "◐", at: Date.now(), goalId: r.goalId || null };
+  state.routineLog = [{ id: r.id, label: r.label, at: Date.now() }].concat((state.routineLog || []).slice(0, 9));
+  saveState();
+  toast("Routine: " + r.label + " — " + r.remind, { label: "Join in", fn: () => joinRoutineReminder() });
+  speakLine(r.line, { quietIfRecent: true });
+  if (r.kind === "dev") runDevIdeasRoutine();
+  if (r.id === "coffee") state.lastCoffeeRoutine = todayKey();
+  if (r.id === "workout") state.lastWorkout = todayKey();
+  saveState();
+  renderRoutines();
+}
+function findRoutine(id) { return NAMED_ROUTINES.concat(HEALTH_REMINDERS).find((r) => r.id === id); }
+function joinRoutineReminder() {
+  const p = state.pendingRoutine;
+  if (!p) return;
+  const r = findRoutine(p.id);
+  state.pendingRoutine = null; saveState();
+  if (!r) { renderRoutines(); return; }
+  holdRoutine(240000);
+  world.goToSpot(r.spot);
+  if (r.pose) world.setPose(r.pose, 45000);
+  speakLine("Yesss, you're joining in! " + r.line, { quietIfRecent: true });
+  if (p.goalId) logHealthGoal(p.goalId, 1, { participate: false }); // she is already doing it with him — don't move her twice
+  if (r.kind === "dev") runDevIdeasRoutine();
+  renderRoutines();
+}
+function snoozeRoutineReminder() {
+  const p = state.pendingRoutine;
+  if (!p) return;
+  state.routineSnooze[p.id] = Date.now() + 15 * 60000;
+  state.pendingRoutine = null; saveState();
+  toast("Snoozed 15 minutes — she'll remind you again.");
+  renderRoutines();
+}
+function skipRoutineReminder() {
+  const p = state.pendingRoutine;
+  if (!p) return;
+  state.routineDone[p.id + ":" + todayKey() + ":" + new Date().getHours()] = 1;
+  state.pendingRoutine = null; saveState();
+  toast("Skipped. She'll carry on without you this time.");
+  renderRoutines();
+}
+
+/* ================= dev + income ideas (2.4.6) =================
+   Tony's rules: real money only — not game currency, not in-app points, not
+   pretend earnings. The platform handles the payment and the delivery, so he
+   never handles money, ships anything, or holds stock. Focus: digital art,
+   games, and AI projects. She does the tech legwork — he has the ideas, she
+   does the tech — and explains it back simply, in plain steps, without
+   assuming he knows the tech. */
+const DEV_INCOME_IDEAS = [
+  { id: "goth-stickers", title: "Gothic sticker pack", kind: "Digital art", pays: "The marketplace pays you after each sale — real money, not points.",
+    plain: "A pack of your goth art as stickers people download and print at home.",
+    tool: "Etsy or Gumroad — a shop website that takes the payment and sends the buyer the files for you. You never touch money or post anything.",
+    setup: ["Pick 10 of your best goth drawings or tarot art", "I turn them into a download pack with a cover", "List it in the shop with a price you pick"],
+    sheDoes: ["Listed 10 sticker ideas from your tarot art", "Found the shop rules and the file sizes they need", "Drafted the listing words"],
+    youDo: "Pick the 10 pieces you want in the pack." },
+  { id: "tiny-game", title: "A tiny goth game with ads", kind: "Game", pays: "The app store pays you monthly for downloads and ads — real payouts.",
+    plain: "A small game people play on their phones — ads inside it pay you real money.",
+    tool: "Google Play / App Store — the store sells it and sends you the money each month. You never take a payment yourself.",
+    setup: ["Pick one simple game idea — a tap game, a runner", "Build it with a free game engine", "Put it on the store with ads turned on"],
+    sheDoes: ["Found 3 free game engines that work on your phone", "Wrote the game idea out step by step", "Listed how ads pay and how payouts work"],
+    youDo: "Pick which game idea you like best." },
+  { id: "wallpaper-pack", title: "Goth wallpaper pack", kind: "Digital art", pays: "Marketplace pays out after each sale — real money.",
+    plain: "A set of your dark wallpapers people download for their phones.",
+    tool: "Gumroad or Etsy — the shop takes the payment and delivers the files for you.",
+    setup: ["Pick 8–12 of your best wallpapers", "I bundle them with a cover and a preview", "List it in the shop"],
+    sheDoes: ["Listed your approved wallpaper styles", "Found the sizes phones need", "Drafted the listing"],
+    youDo: "Pick the wallpapers you want in it." },
+  { id: "tarot-pdf", title: "Printable tarot deck (PDF)", kind: "Digital art", pays: "Marketplace pays out after each sale — real money.",
+    plain: "Your tarot card art as a printable deck people buy and print at home.",
+    tool: "Etsy or Gumroad — the shop takes payment and sends the buyer the file. No printing or posting from you.",
+    setup: ["Pick which deck to sell first", "I lay the cards out as a print-at-home PDF", "List it with a price you pick"],
+    sheDoes: ["Listed your finished decks and card counts", "Found the print sizes people expect", "Drafted the listing"],
+    youDo: "Pick which deck goes first." },
+  { id: "ai-tool-app", title: "A small AI tool app", kind: "AI app", pays: "App store sales, paid out monthly — real money.",
+    plain: "A little app that does one useful thing with AI — like a daily card pull or a mood check-in.",
+    tool: "Google Play / App Store — the store sells it and sends you the money. You never handle a payment.",
+    setup: ["Pick the one thing the app does", "I work out the simplest way to build it", "Put it on the store"],
+    sheDoes: ["Listed 5 simple AI app ideas that fit your style", "Found the free tools that build them", "Wrote the plain-words plan"],
+    youDo: "Pick the idea you like — I'll do the tech part." },
+  { id: "game-assets", title: "2D game art pack for other devs", kind: "Game", pays: "Marketplace pays out after each sale — real money.",
+    plain: "Your goth icons, sprites and tiles sold to other people making games.",
+    tool: "itch.io or a game-asset shop — the shop takes payment and delivers the files for you.",
+    setup: ["Pick what goes in the pack — icons, tiles, characters", "I bundle them with a preview picture", "List it in the shop"],
+    sheDoes: ["Listed the art styles you already make", "Found what game devs actually buy", "Drafted the listing"],
+    youDo: "Pick the first pack theme." },
+  { id: "ai-art-pod", title: "AI goth art, print-on-demand", kind: "AI art", pays: "The print shop takes the payment, prints it and ships it — you never touch it or the money.",
+    plain: "Your AI goth art on shirts and posters — the shop makes and ships each order, you just earn.",
+    tool: "Print-on-demand shop — they print, ship and take payment. You never hold stock or post anything.",
+    setup: ["Pick 5–10 designs", "I put them on the shop's products", "Share the shop link"],
+    sheDoes: ["Listed your best AI art styles", "Found the print shops that handle everything", "Wrote the plain-words setup"],
+    youDo: "Pick the designs you want on products." },
+  { id: "prompt-pack", title: "AI prompt pack for goth art", kind: "AI product", pays: "Marketplace pays out after each sale — real money.",
+    plain: "Your best AI art prompts, sold as a pack other people can use to make their own goth art.",
+    tool: "Gumroad or Etsy — the shop takes payment and sends the buyer the file.",
+    setup: ["Pick your 20 best prompts", "I write them up with example pictures", "List it in the shop"],
+    sheDoes: ["Listed the prompt styles you use most", "Found what prompt packs sell for", "Drafted the listing"],
+    youDo: "Pick your best prompts." },
+  { id: "habit-app", title: "A goth habit tracker app", kind: "App", pays: "App store sales, paid out monthly — real money.",
+    plain: "A simple habit tracker in your goth style — people pay a little for it in the store.",
+    tool: "Google Play / App Store — the store sells it and sends you the money each month.",
+    setup: ["Pick the habits it tracks — water, sleep, stretch", "I work out the simplest build", "Put it on the store"],
+    sheDoes: ["Listed the habits you already track with me", "Found the free tools to build it", "Wrote the plain-words plan"],
+    youDo: "Pick the first three habits it tracks." },
+  { id: "creator-links", title: "Best tools for goth creators list", kind: "Affiliate", pays: "The company pays you when someone signs up through your link — real money, no selling anything yourself.",
+    plain: "A short list of the tools you actually use, with your link — when someone signs up, the company pays you.",
+    tool: "Affiliate programs — the company tracks the link and pays you. You never take a payment or handle anything.",
+    setup: ["Pick 5 tools you actually like", "I get your links and write the list", "Share the list"],
+    sheDoes: ["Listed the tools you already use", "Found which ones pay for referrals", "Drafted the list"],
+    youDo: "Pick the 5 tools you want on it." }
+];
+async function runDevIdeasRoutine() {
+  holdRoutine(300000);
+  await world.goToSpot("pc");
+  world.setPose("type", 45000);
+  setStatus("hunting for dev ideas", 8000);
+  let idea = null, source = "my idea bank";
+  if (state.geminiKey && state.searchOn) {
+    try {
+      const r = await groundedSearch(state.geminiKey, "real ways to earn money from digital art, games and AI apps where the platform handles payment and delivery — app store sales, ad revenue, digital marketplaces that pay out. No stock, no shipping, no handling money. Real payouts only, not game currency.");
+      if (r.ok) {
+        idea = { id: "web-" + Date.now(), title: "From the web: " + (String(r.answer).split(".")[0] || "dev idea").slice(0, 90), kind: "Web search", pays: "Platform pays out — check the details before you commit. Real money, not game cash.",
+          plain: String(r.answer).slice(0, 300),
+          tool: "The web, searched just now — I'll explain it back simply, in plain steps.",
+          setup: ["Read the idea below", "Tell me which part you want me to dig into", "I'll pull the setup steps in plain words"],
+          sheDoes: ["Searched the web for real payout options", "Filtered out anything where you handle money or stock"],
+          youDo: "Tell me if this one's worth digging into." };
+        source = "web search";
+      }
+    } catch (e) { /* fall through to the idea bank */ }
+  }
+  if (!idea) {
+    const pool = DEV_INCOME_IDEAS.filter((d) => d.id !== state.lastDevIdeaDay);
+    idea = pickOne(pool.length ? pool : DEV_INCOME_IDEAS);
+    state.lastDevIdeaDay = idea.id;
+  }
+  state.devIdeas = [idea].concat((state.devIdeas || []).slice(0, 4));
+  saveState();
+  showSpeech("Found one: " + idea.title + ". " + (source === "web search" ? "I searched the web just now." : "From my own list — no search key saved, so I used my bank.") + " Real money, not game cash. Check Routines for the steps.");
+  renderRoutines();
+}
+
+/* ================= Routines + Poses panels (2.4.6) ================= */
+function fmtHours(hours) { return hours.map((h) => (h === 0 ? "12am" : h < 12 ? h + "am" : h === 12 ? "12pm" : (h - 12) + "pm")).join(", "); }
+function renderRoutines() {
+  const box = $("routineToday"); if (!box) return;
+  const toggle = $("routinesToggle");
+  if (toggle) { toggle.textContent = "Routines: " + (state.routinesOn === false ? "off" : "on"); }
+  const h = new Date().getHours(), t = todayKey();
+  let html = "";
+  // Pending reminder card: Join / Snooze / Skip.
+  const p = state.pendingRoutine;
+  if (p) {
+    html += "<div class='routine-card'><b>" + (p.emoji || "◐") + " " + esc(p.label) + "</b><br>She's doing this now — want in?" +
+      "<div class='btn-row'><button type='button' data-rjoin>Join in</button><button type='button' data-rsnooze>Snooze 15 min</button><button type='button' data-rskip>Skip</button></div></div>";
+  }
+  // Today's schedule. Routines with a linked health goal show the goal's
+  // progress right in the row — the routine and the goal are the same thing.
+  html += "<h4>Today's routines</h4>";
+  for (const r of NAMED_ROUTINES.concat(HEALTH_REMINDERS)) {
+    const done = r.hours.some((hh) => state.routineDone[r.id + ":" + t + ":" + hh]);
+    const snoozed = state.routineSnooze[r.id] && Date.now() < state.routineSnooze[r.id];
+    let goalBit = "";
+    if (r.goalId) {
+      const g = healthGoalsToday().find((x) => x.id === r.goalId);
+      if (g) goalBit = " · <b>" + g.done + "/" + g.target + " " + esc(g.unit) + "</b>" + (g.done >= g.target ? " ✓" : "") + " <button type='button' data-routine-goal='" + r.goalId + "'>+1</button>";
+      else goalBit = " <button type='button' data-routine-goal='" + r.goalId + "'>+1 goal</button>";
+    }
+    html += "<div class='routine-row'><span>" + (r.emoji || "◐") + " " + esc(r.label) + "</span><span class='muted'>" + fmtHours(r.hours) + (done ? " · done" : snoozed ? " · snoozed" : "") + goalBit + "</span></div>";
+  }
+  // Recent log.
+  if (state.routineLog && state.routineLog.length) {
+    html += "<h4>Done today</h4>";
+    for (const l of state.routineLog.slice(0, 5)) {
+      html += "<div class='routine-row'><span>" + esc(l.label) + "</span><span class='muted'>" + new Date(l.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "</span></div>";
+    }
+  }
+  box.innerHTML = html;
+  box.querySelectorAll("[data-rjoin]").forEach((b) => b.addEventListener("click", joinRoutineReminder));
+  box.querySelectorAll("[data-rsnooze]").forEach((b) => b.addEventListener("click", snoozeRoutineReminder));
+  box.querySelectorAll("[data-rskip]").forEach((b) => b.addEventListener("click", skipRoutineReminder));
+  box.querySelectorAll("[data-routine-goal]").forEach((b) => b.addEventListener("click", () => logRoutineGoal(b.dataset.routineGoal)));
+  // Latest dev / income idea card.
+  const ideaBox = $("devIdeaBox");
+  if (ideaBox) {
+    const idea = (state.devIdeas || [])[0];
+    if (idea) {
+      ideaBox.innerHTML = "<h4>Latest income idea — " + esc(idea.kind || "") + "</h4><div class='routine-card'><b>" + esc(idea.title) + "</b><br>" +
+        "<span class='muted'>" + esc(idea.plain || "") + "</span><br><b>How it pays:</b> " + esc(idea.pays || "") + "<br>" +
+        "<b>The tool:</b> " + esc(idea.tool || "") + "<br><b>Steps:</b><ol>" + (idea.setup || []).map((s) => "<li>" + esc(s) + "</li>").join("") + "</ol>" +
+        "<b>What I already did:</b><ul>" + (idea.sheDoes || []).map((s) => "<li>" + esc(s) + "</li>").join("") + "</ul>" +
+        "<b>Your part:</b> " + esc(idea.youDo || "") +
+        "<p class='muted'>Real money, real payouts — not game cash or points. I can't promise how much; it depends on people actually buying. The platform takes the payment and delivers it — you never touch money or stock.</p>" +
+        "<div class='btn-row'><button type='button' data-test-lab>Test it in Project Lab</button><button type='button' data-work-with>Work on this with me</button></div></div>";
+      ideaBox.querySelectorAll("[data-test-lab]").forEach((b) => b.addEventListener("click", () => openPanel("lifeSection")));
+      ideaBox.querySelectorAll("[data-work-with]").forEach((b) => b.addEventListener("click", () => {
+        // She comes to the PC and works on it with him — not a menu, she's in it.
+        holdRoutine(300000);
+        world.goToSpot("pc");
+        world.setPose("type", 15000);
+        openPanel("chatSection");
+        const firstStep = (idea.setup && idea.setup[0]) || "tell me where to start";
+        speakLine("Okay, let's work on it together — step one is: " + firstStep + ". I'll do the tech part, you just tell me what you think.", { quietIfRecent: true });
+      }));
+    } else {
+      ideaBox.innerHTML = "<p class='muted'>No income idea yet — she brings one at 10am and 3pm. Or tell her \"find me a dev idea\" any time.</p>";
+    }
+  }
+  // Health goals. Goals linked to a routine (workout, water, stretch, sleep)
+  // already show their progress in the schedule above — this list is only
+  // for goals with no routine of their own, so there's one list, not two.
+  const hb = $("healthGoalsBox");
+  if (hb) {
+    const linkedGoalIds = new Set(NAMED_ROUTINES.concat(HEALTH_REMINDERS).map((r) => r.goalId).filter(Boolean));
+    const goals = healthGoalsToday().filter((g) => !linkedGoalIds.has(g.id));
+    let gh = "<h4>Health goals</h4><p class='muted'>Reminders and tracking only — I'm not a doctor, just your reminder girl. Exercise goals live right in the schedule above: the workout routine and the workout goal are the same thing.</p>";
+    for (const g of goals) {
+      const done = g.done >= g.target;
+      gh += "<div class='routine-row'><span>" + (g.emoji || "♥") + " " + esc(g.label) + " — <b>" + g.done + "/" + g.target + " " + esc(g.unit) + "</b>" + (done ? " ✓" : "") + "</span>" +
+        "<span><button type='button' data-goal-plus='" + g.id + "'>+1</button> <button type='button' data-goal-del='" + g.id + "'>✕</button></span></div>";
+    }
+    gh += "<p class='muted'>Add a goal:</p><div class='btn-row'>" + HEALTH_GOAL_PRESETS.map((pr) => "<button type='button' data-goal-add='" + pr.id + "'>" + pr.emoji + " " + esc(pr.label) + "</button>").join("") + "</div>";
+    hb.innerHTML = gh;
+    hb.querySelectorAll("[data-goal-plus]").forEach((b) => b.addEventListener("click", () => logHealthGoal(b.dataset.goalPlus, 1)));
+    hb.querySelectorAll("[data-goal-del]").forEach((b) => b.addEventListener("click", () => { state.healthGoals = (state.healthGoals || []).filter((g) => g.id !== b.dataset.goalDel); saveState(); renderRoutines(); }));
+    hb.querySelectorAll("[data-goal-add]").forEach((b) => b.addEventListener("click", () => addHealthGoal(b.dataset.goalAdd)));
+  }
+}
+function renderPoses() {
+  const grid = $("posesGrid"); if (!grid) return;
+  grid.innerHTML = "";
+  for (const p of POSES) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = "<span class='hi'>" + p.icon + "</span>" + p.label;
+    b.addEventListener("click", () => doPose(p.id));
+    grid.appendChild(b);
+  }
 }
 
 async function startLifeSim() {

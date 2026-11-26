@@ -651,6 +651,13 @@ body.wallpaper-avatar-only #dock { display: none; }
 .bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; margin: 8px 0 4px; }
 .bar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--purple), #c0392b, var(--gold)); transition: width .6s ease; }
 .skills-box { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+/* routines + poses (2.4.6) */
+.routine-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.routine-row:last-child { border-bottom: 0; }
+.routine-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 10px 0; }
+.routine-card ol, .routine-card ul { margin: 6px 0 6px 18px; }
+.routine-card h4 { margin: 0 0 6px; }
+.muted { opacity: .72; }
 .skill { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; }
 .skill-top { display: flex; align-items: center; gap: 8px; }
 .skill-ic { color: var(--gold); font-size: 18px; width: 22px; text-align: center; }

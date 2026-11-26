@@ -35,16 +35,19 @@ export const SPOTS = {
   coffee:         { room: "kitchen",  x: 7.5,   z: -2.55 },
   fridge:         { room: "kitchen",  x: 9.0,   z: -2.5 },
   counter:        { room: "kitchen",  x: 5.6,   z: -2.55 },
-  kitchen_table:  { room: "kitchen",  x: 6.0,   z: 0.35 },
+  kitchen_table:  { room: "kitchen",  x: 6.0,   z: 0.35, pose: "coffee" },
   tub:            { room: "bathroom", x: 12.0,  z: -3.2, pose: "bath" },
   sink:           { room: "bathroom", x: 14.1,  z: -2.65 },
   bath_center:    { room: "bathroom", x: 12.5,  z: 0.7 },
-  yard_center:    { room: "kitchen",  x: 6.65,  z: 5.35 }
+  yard_center:    { room: "kitchen",  x: 6.65,  z: 5.35 },
+  pond:           { room: "kitchen",  x: 8.1,   z: 4.5, pose: "pond" },
+  flowers:        { room: "kitchen",  x: 5.3,   z: 5.6, pose: "water" },
+  window:         { room: "bedroom",  x: -12.6, z: 0.9, pose: "window" }
 };
 export const ROOM_SPOTS = {
-  bedroom: ["bedside", "vanity", "nightstand", "bedroom_center", "bed"],
+  bedroom: ["bedside", "vanity", "nightstand", "bedroom_center", "bed", "window"],
   living: ["couch", "pc", "stereo", "rug", "living_center", "tv"],
-  kitchen: ["coffee", "fridge", "counter", "kitchen_table"],
+  kitchen: ["coffee", "fridge", "counter", "kitchen_table", "pond", "flowers", "yard_center"],
   bathroom: ["sink", "bath_center", "tub"]
 };
 export function roomAt(x) {
@@ -203,6 +206,24 @@ class BillboardAvatar {
       else if (m === "stretch") { sy = 1 + (Math.sin(t * 1.3) * 0.5 + 0.5) * 0.04; rz = Math.sin(t * 0.65) * 0.04; }
       else if (m === "art") { rz = -0.03 + Math.sin(t * 2.2) * 0.012; sy = 1 + Math.sin(t * 1.8) * 0.006; }
       else if (m === "flirt") { rz = Math.sin(t * 3) * 0.05; y = Math.abs(Math.sin(t * 3)) * 0.03; }
+      else if (m === "wave") { y = Math.abs(Math.sin(t * 6)) * 0.05; rz = Math.sin(t * 6) * 0.04; sy = 1 + Math.sin(t * 3) * 0.008; }
+      else if (m === "kiss") { rx = 0.12; y = Math.abs(Math.sin(t * 2.4)) * 0.025; sy = 1 + Math.sin(t * 2.4) * 0.008; }
+      else if (m === "hips") { sx = 1.03; rz = Math.sin(t * 1.4) * 0.02; y = Math.abs(Math.sin(t * 1.4)) * 0.012; }
+      else if (m === "bow") { const dip = Math.sin(t * 1.2) * 0.5 + 0.5; rx = 0.1 + dip * 0.3; y = -dip * 0.09; }
+      else if (m === "crossleg") { y = -0.5; sy = 0.9 + Math.sin(t * 1.6) * 0.006; }
+      else if (m === "read") { y = -0.42; rx = 0.08; sy = 0.97 + Math.sin(t * 1.6) * 0.006; }
+      else if (m === "coffee") { y = -0.42; rx = 0.05; sy = 0.97 + Math.abs(Math.sin(t * 1.1)) * 0.008; }
+      else if (m === "water") { rx = 0.18; y = -0.06; rz = Math.sin(t * 2.0) * 0.03; }
+      else if (m === "window") { rx = -0.08; sy = 1.01 + Math.sin(t * 1.5) * 0.006; rz = Math.sin(t * 0.9) * 0.02; }
+      else if (m === "hug") { rx = 0.15; y = Math.abs(Math.sin(t * 2.0)) * 0.02; sy = 1 + Math.sin(t * 2.0) * 0.008; }
+      else if (m === "heart") { rx = 0.05; y = Math.abs(Math.sin(t * 2.6)) * 0.03; sx = 1 + Math.sin(t * 2.6) * 0.012; }
+      else if (m === "laugh") { rx = -0.22; y = Math.abs(Math.sin(t * 7)) * 0.08; rz = Math.sin(t * 7) * 0.05; }
+      else if (m === "defeat") { y = -0.12; sy = 0.93 + Math.sin(t * 0.8) * 0.005; rz = 0.06; }
+      else if (m === "cheer") { y = Math.abs(Math.sin(t * 6)) * 0.16; rz = Math.sin(t * 3) * 0.06; sx = 1 + Math.sin(t * 6) * 0.012; }
+      else if (m === "smoke") { rz = Math.sin(t * 1.1) * 0.04; sy = 1 + Math.sin(t * 1.1) * 0.01; y = Math.abs(Math.sin(t * 1.1)) * 0.012; }
+      else if (m === "pond") { rx = 0.1; y = Math.abs(Math.sin(t * 1.5)) * 0.015; rz = Math.sin(t * 1.5) * 0.02; }
+      else if (m === "type") { y = -0.42; rx = 0.06; y += Math.abs(Math.sin(t * 9)) * 0.012; }
+      else if (m === "workout") { y = Math.abs(Math.sin(t * 5)) * 0.14; rz = Math.sin(t * 2.5) * 0.07; sx = 1 + Math.sin(t * 5) * 0.015; }
       else { sy = 1 + Math.sin(t * 1.9) * 0.008; } // breathing
     }
     if (yawLock) {
@@ -225,6 +246,115 @@ class BillboardAvatar {
 
 const OUTFIT_MASK = new URL("./assets/models/outfit3d-mask.png", import.meta.url).href;
 
+
+/* ---- procedural pose bones (2.4.6) ----
+   The rigged GLB only has idle + walk clips, so poses are procedural: the
+   billboard body bobs/sways (BillboardAvatar.update) and, for the 3D model,
+   selected skeleton bones are rotated on top of the idle clip. Bone axes were
+   measured from the GLB bind pose (eyes define forward = +Z, right = -X):
+   upper-arm forward swing ~= local -Z, sideways raise ~= local +/-X
+   (R:+X, L:-X), forearm bend ~= local -Z, spine/head nod ~= local -Z.
+   Each entry is bone -> [{axis (local unit vector), angle (radians, positive
+   moves the limb in the stated direction), osc (optional wave)}]. Applied
+   after mixer.update() each frame, so the clip is never fought. */
+const POSE_BONES = {
+  wave: {
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 1.9, osc: { amp: 0.35, speed: 6 } }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.4 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: -0.12 }]
+  },
+  kiss: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.9 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 1.3 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.25 }]
+  },
+  hips: {
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 0.5 }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 0.5 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 1.5 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 1.5 }]
+  },
+  bow: {
+    Spine02: [{ axis: [0, 0, -1], angle: 0.5 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.25 }]
+  },
+  read: {
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.3 }],
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.35 }],
+    L_Upperarm: [{ axis: [0, 0, -1], angle: 0.35 }]
+  },
+  coffee: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.5 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.9 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.15 }]
+  },
+  water: {
+    Spine02: [{ axis: [0, 0, -1], angle: 0.35 }],
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.8 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.3 }]
+  },
+  window: {
+    Head: [{ axis: [-0.5, 0, -0.87], angle: -0.3 }],
+    Spine02: [{ axis: [0, 0, -1], angle: -0.1 }]
+  },
+  hug: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 1.0 }, { axis: [1, 0, 0], angle: 0.3 }],
+    L_Upperarm: [{ axis: [0, 0, -1], angle: 1.0 }, { axis: [-1, 0, 0], angle: 0.3 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.6 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.6 }]
+  },
+  heart: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.9 }, { axis: [1, 0, 0], angle: 0.4 }],
+    L_Upperarm: [{ axis: [0, 0, -1], angle: 0.9 }, { axis: [-1, 0, 0], angle: 0.4 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 1.1 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 1.1 }]
+  },
+  laugh: {
+    Spine02: [{ axis: [0, 0, -1], angle: -0.35 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: -0.4 }]
+  },
+  defeat: {
+    Spine02: [{ axis: [0, 0, -1], angle: 0.35 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.5 }],
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 0.1 }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 0.1 }]
+  },
+  cheer: {
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 2.3 }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 2.3 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.3 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.3 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: -0.2 }]
+  },
+  smoke: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.7 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 1.2 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.1 }]
+  },
+  pond: {
+    Spine02: [{ axis: [0, 0, -1], angle: 0.15 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.35 }]
+  },
+  type: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.6 }],
+    L_Upperarm: [{ axis: [0, 0, -1], angle: 0.6 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.8 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.8 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.2 }]
+  },
+  workout: {
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 1.2, osc: { amp: 0.5, speed: 5 } }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 1.2, osc: { amp: 0.5, speed: 5 } }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.2 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.2 }]
+  },
+  stretch: {
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 1.8 }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 1.8 }],
+    Spine02: [{ axis: [0, 0, -1], angle: -0.15 }]
+  }
+};
+const POSE_BONE_NAMES = [...new Set(Object.values(POSE_BONES).flatMap((m) => Object.keys(m)))];
 
 class BuiltInAvatar extends BillboardAvatar {
   setModelEnabled(enabled) {
@@ -269,6 +399,12 @@ class BuiltInAvatar extends BillboardAvatar {
       group.add(facing);
       this.modelParts = [];
       this.rigged = rigged;
+      // Pose bones (2.4.6): refs for the procedural pose layer, if present.
+      this.poseBones = {};
+      if (rigged) for (const name of POSE_BONE_NAMES) { const b = scene.getObjectByName(name); if (b) this.poseBones[name] = b; }
+      this._poseWeight = 0;
+      this._poseQ = new THREE.Quaternion();
+      this._poseAxis = new THREE.Vector3();
       scene.traverse((mesh) => {
         if (!mesh.isMesh) return;
         // A small fill keeps the textured model legible in the gothic room.
@@ -413,6 +549,24 @@ class BuiltInAvatar extends BillboardAvatar {
   get activePicks() { return this.model?.visible ? this.modelParts : [this.body]; }
   get representation() { return this.model?.visible ? "model" : this.modelFailed ? "fallback" : "portrait"; }
 
+  applyPoseBones(mode, dt, t) {
+    const target = POSE_BONES[mode];
+    const want = target ? 1 : 0;
+    this._poseWeight += (want - this._poseWeight) * Math.min(1, dt * 6);
+    if (!target || this._poseWeight < 0.02) return;
+    const w = this._poseWeight;
+    for (const [name, turns] of Object.entries(target)) {
+      const bone = this.poseBones[name];
+      if (!bone) continue;
+      for (const turn of turns) {
+        const angle = (turn.angle + (turn.osc ? Math.sin(t * turn.osc.speed) * turn.osc.amp : 0)) * w;
+        this._poseAxis.set(turn.axis[0], turn.axis[1], turn.axis[2]).normalize();
+        this._poseQ.setFromAxisAngle(this._poseAxis, angle);
+        bone.quaternion.multiply(this._poseQ);
+      }
+    }
+  }
+
   update(dt, t, camera, pose) {
     super.update(dt, t, camera, pose);
     if (!this.model?.visible) return;
@@ -421,6 +575,7 @@ class BuiltInAvatar extends BillboardAvatar {
       const walking = mode === "walk";
       this.playMotion(walking ? "walk" : "idle");
       this.mixer.update(dt);
+      this.applyPoseBones(mode, dt, t);
       if (mode !== "lie") {
         const target = walking ? pose.heading : this.yaw;
         if (!Number.isFinite(this.modelYaw)) this.modelYaw = this.yaw;
@@ -446,6 +601,10 @@ class BuiltInAvatar extends BillboardAvatar {
       this.model.position.y = -0.4;
     } else if (mode === "sit") {
       this.model.rotation.x = -0.08;
+    } else if (mode === "crossleg") {
+      this.model.rotation.x = -0.12;
+    } else if (mode === "read" || mode === "coffee" || mode === "type") {
+      this.model.rotation.x = -0.06;
     }
     for (const mesh of this.modelParts) mesh.material.emissiveIntensity = 0.52 * (pose.brightness ?? 1);
   }
@@ -560,6 +719,37 @@ export function createWorld(opts) {
     const post = box(0.26, WALL_H, 0.26, mat.blackGloss, x, WALL_H / 2, Z_BACK + len);
     const cap = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.45, 4), mat.gold);
     cap.position.set(x, WALL_H + 0.2, Z_BACK + len); scene.add(cap);
+  }
+
+  /* ------------ yard (2.4.6): lawn slab, koi pond, flower planters -------- */
+  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.8), new THREE.MeshLambertMaterial({ color: 0x1d2b18 }));
+  lawn.rotation.x = -Math.PI / 2; lawn.position.set(7.0, 0.002, 5.8); scene.add(lawn);
+  lawn.userData.tap = "floor"; tappables.push(lawn);
+  const pondWater = cyl(1.15, 1.15, 0.1, new THREE.MeshLambertMaterial({ color: 0x1d4a6e }), 8.2, 0.05, 5.9, 24);
+  pondWater.userData.tap = "pond"; tappables.push(pondWater);
+  const pondRim = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.09, 8, 28), mat.steel);
+  pondRim.rotation.x = Math.PI / 2; pondRim.position.set(8.2, 0.1, 5.9); scene.add(pondRim);
+  pondRim.userData.tap = "pond"; tappables.push(pondRim);
+  const koi = [];
+  const koiCols = [0xff7a2a, 0xffd27a, 0xff9a5a];
+  for (let i = 0; i < 3; i++) {
+    const k = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshLambertMaterial({ color: koiCols[i] }));
+    k.scale.set(1.6, 0.5, 0.8); k.position.set(8.2, 0.11, 5.9); scene.add(k);
+    k.userData.tap = "pond"; tappables.push(k);
+    koi.push({ mesh: k, r: 0.45 + i * 0.2, speed: 0.25 + i * 0.08, phase: i * 2.1 });
+  }
+  const flowerCols = [0xff7ab8, 0xb04bff, 0xffffff, 0xff5a7a, 0xd9a0ff];
+  for (const [px, pz] of [[5.3, 4.7], [5.3, 6.5]]) {
+    const planter = box(1.1, 0.28, 0.5, mat.darkWood, px, 0.14, pz);
+    planter.userData.tap = "flowers"; tappables.push(planter);
+    for (let i = 0; i < 5; i++) {
+      const fx = px - 0.4 + i * 0.2, fz = pz + (i % 2 ? 0.12 : -0.12);
+      const stem = cyl(0.015, 0.015, 0.3, new THREE.MeshLambertMaterial({ color: 0x2a5a2a }), fx, 0.42, fz, 6);
+      const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshLambertMaterial({ color: flowerCols[i] }));
+      bloom.position.set(fx, 0.6, fz); scene.add(bloom);
+      bloom.userData.tap = "flowers"; tappables.push(bloom);
+      stem.userData.tap = "flowers"; tappables.push(stem);
+    }
   }
 
   /* ------------ LED strips (bedroom + living) */
@@ -972,8 +1162,15 @@ export function createWorld(opts) {
   const her = {
     pos: new THREE.Vector3(SPOTS.living_center.x, 0, SPOTS.living_center.z),
     path: [], speed: 1.55, spot: "living_center", pose: null, activity: "vibe",
-    talking: false, room: "living", moveDir: 0, heading: 0, arriveCb: null
+    talking: false, room: "living", moveDir: 0, heading: 0, arriveCb: null, mode: "idle"
   };
+  // 2.4.6 pose override: a temporary pose (from the Poses menu, chat, or a
+  // routine) that wins over the spot pose / activity until it expires.
+  let poseOverride = null, poseOverrideUntil = 0;
+  function setPose(name, ms) {
+    if (!name) { poseOverride = null; poseOverrideUntil = 0; return; }
+    poseOverride = name; poseOverrideUntil = Date.now() + (ms || 9000);
+  }
   avatar.object3d.position.copy(her.pos);
 
   // The private game's figures are attached only while it is being played.
@@ -1279,13 +1476,22 @@ export function createWorld(opts) {
     // pose resolution
     let mode;
     if (her.path.length) mode = "walk";
+    else if (poseOverride && Date.now() < poseOverrideUntil) mode = poseOverride;
     else if (her.pose === "lie" || her.pose === "bath" || her.pose === "sit") mode = her.pose;
     else if (stereoState.on) mode = "dance";
     else if (her.talking) mode = "talk";
     else mode = her.activity || "idle";
+    her.mode = mode;
     const lamp = roomLights[nowRoom];
     const lit = LAMP_MODES[lamp.mode].i ? 1 : 0.72;
     avatar.update(dt, t, camera, { mode, moveDir: her.moveDir, heading: her.heading, brightness: lit });
+
+    // koi drift around the pond
+    for (const k of koi) {
+      const a = t * k.speed + k.phase;
+      k.mesh.position.set(8.2 + Math.cos(a) * k.r, 0.11, 5.9 + Math.sin(a) * k.r * 0.7);
+      k.mesh.rotation.y = -a;
+    }
 
     if (life) {
       if (lifePath.length) {
@@ -1406,7 +1612,8 @@ export function createWorld(opts) {
     getAvatarRepresentation: () => avatar.representation || "portrait",
     getAvatarMotion: () => avatar.motionState || null,
     goToSpot, goToPoint, goToRoom, placeAt,
-    getHer: () => ({ room: roomAt(her.pos.x), spot: her.spot, walking: her.path.length > 0, pose: her.pose }),
+    getHer: () => ({ room: roomAt(her.pos.x), spot: her.spot, walking: her.path.length > 0, pose: her.pose, mode: her.mode || "idle", poseOverride: poseOverride && Date.now() < poseOverrideUntil ? poseOverride : null }),
+    setPose, clearPose: () => setPose(null),
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
     setFollow, setRoomView,

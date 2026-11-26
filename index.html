@@ -87,6 +87,8 @@
       <button type="button" data-goto="bedSection"><span class="hi">☽</span>Bedtime</button>
       <button type="button" data-goto="alarmSection"><span class="hi">◔</span>Alarm</button>
       <button type="button" data-goto="skillsSection"><span class="hi">✦</span>Her Skills</button>
+      <button type="button" data-goto="routinesSection"><span class="hi">☀</span>Routines</button>
+      <button type="button" data-goto="posesSection"><span class="hi">♡</span>Poses</button>
       <button type="button" data-goto="settingsSection"><span class="hi">⚙</span>Settings</button>
     </div>
     <div class="btn-row">
@@ -117,6 +119,17 @@
     </div>
     <p class="help">She gets better at things the more you do them together. Each skill levels up and unlocks new things she does on her own.</p>
     <div id="skillsBox" class="skills-box"></div>
+  </section>
+  <section id="routinesSection" aria-label="Routines">
+    <p class="help">She does things on her own through the day — coffee, workouts, the flowers, the koi, her computer work, 420 breaks — and reminds you too. She does it all with you: she walks over, does the thing, and talks about it. Nothing happens in a menu while she stands somewhere else. Exercise goals live right in the schedule: the workout routine and the workout goal are the same thing.</p>
+    <div class="btn-row"><button id="routinesToggle" class="wide-btn" type="button">Routines: on</button></div>
+    <div id="routineToday" class="skills-box"></div>
+    <div id="devIdeaBox"></div>
+    <div id="healthGoalsBox"></div>
+  </section>
+  <section id="posesSection" aria-label="Poses">
+    <p class="help">Tap a pose and she strikes it. You can also just type it in Talk — "hug", "cheer", "wave", "dance".</p>
+    <div id="posesGrid" class="hub-grid"></div>
   </section>
   <section id="chatSection" aria-label="Talk to Aimmianna">
     <div id="chatScroll" class="chat-scroll">
