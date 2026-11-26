@@ -15,9 +15,11 @@ export const ROOMS = {
   bedroom:  { id: "bedroom",  label: "Bedroom",     x0: -14, x1: -6 },
   living:   { id: "living",   label: "Living Room", x0: -6,  x1: 4 },
   kitchen:  { id: "kitchen",  label: "Kitchen",     x0: 4,   x1: 10 },
-  bathroom: { id: "bathroom", label: "Bathroom",    x0: 10,  x1: 15 }
+  bathroom: { id: "bathroom", label: "Bathroom",    x0: 10,  x1: 15 },
+  ritual:   { id: "ritual",   label: "Ritual Room", x0: 15,  x1: 20.5 },
+  yard:     { id: "yard",     label: "Yard",        x0: 4,   x1: 10 }
 };
-const ROOM_ORDER = ["bedroom", "living", "kitchen", "bathroom"];
+const ROOM_ORDER = ["bedroom", "living", "kitchen", "bathroom", "ritual"];
 const Z_BACK = -4, Z_FRONT = 3.4, WALL_H = 3.4, HALL_Z = 1.9;
 
 export const SPOTS = {
@@ -39,18 +41,32 @@ export const SPOTS = {
   tub:            { room: "bathroom", x: 12.0,  z: -3.2, pose: "bath" },
   sink:           { room: "bathroom", x: 14.1,  z: -2.65 },
   bath_center:    { room: "bathroom", x: 12.5,  z: 0.7 },
-  yard_center:    { room: "kitchen",  x: 6.65,  z: 5.35 },
-  pond:           { room: "kitchen",  x: 8.1,   z: 4.5, pose: "pond" },
-  flowers:        { room: "kitchen",  x: 5.3,   z: 5.6, pose: "water" },
-  window:         { room: "bedroom",  x: -12.6, z: 0.9, pose: "window" }
+  yard_center:    { room: "yard",     x: 6.65,  z: 5.35 },
+  pond:           { room: "yard",     x: 8.1,   z: 4.5, pose: "pond" },
+  flowers:        { room: "yard",     x: 5.3,   z: 5.6, pose: "water" },
+  window:         { room: "bedroom",  x: -12.6, z: 0.9, pose: "window" },
+  gate:           { room: "kitchen",  x: 6.65,  z: 2.6 },
+  bench:          { room: "yard",     x: 5.0,   z: 7.1, pose: "sit" },
+  sakura:         { room: "yard",     x: 7.0,   z: 6.4, pose: "read" },
+  hammock:        { room: "yard",     x: 7.8,   z: 7.0, pose: "lie" },
+  bamboo:         { room: "yard",     x: 9.6,   z: 4.4, pose: "pond" },
+  ritual_center:  { room: "ritual",   x: 17.75, z: 0.7 },
+  altar:          { room: "ritual",   x: 17.75, z: -2.3, pose: "art" },
+  ritual_rug:     { room: "ritual",   x: 17.75, z: -0.4, pose: "crossleg" },
+  ritual_mirror:  { room: "ritual",   x: 19.4,  z: -2.6 },
+  staff:          { room: "ritual",   x: 15.7,  z: -3.2, pose: "art" }
 };
 export const ROOM_SPOTS = {
   bedroom: ["bedside", "vanity", "nightstand", "bedroom_center", "bed", "window"],
   living: ["couch", "pc", "stereo", "rug", "living_center", "tv"],
-  kitchen: ["coffee", "fridge", "counter", "kitchen_table", "pond", "flowers", "yard_center"],
-  bathroom: ["sink", "bath_center", "tub"]
+  kitchen: ["coffee", "fridge", "counter", "kitchen_table", "gate"],
+  bathroom: ["sink", "bath_center", "tub"],
+  yard: ["yard_center", "pond", "flowers", "bench", "sakura", "hammock", "bamboo"],
+  ritual: ["ritual_center", "altar", "ritual_rug", "ritual_mirror", "staff"]
 };
-export function roomAt(x) {
+export function roomAt(x, z) {
+  // The yard shares the kitchen's x range but sits outside the front (z > 3.4).
+  if (z != null && z > Z_FRONT && x >= 4 && x < 10) return "yard";
   for (const id of ROOM_ORDER) { const r = ROOMS[id]; if (x >= r.x0 && x < r.x1) return id; }
   return x < 0 ? "bedroom" : "bathroom";
 }
@@ -668,7 +684,8 @@ export function createWorld(opts) {
     bedroom:  { pos: [-10.2, 2.4, -1.4], base: 15, def: 2 },
     living:   { pos: [-1.2, 2.7, -1.0], base: 18, def: 1 },
     kitchen:  { pos: [6.8, 2.5, -1.2], base: 15, def: 1 },
-    bathroom: { pos: [12.6, 2.5, -1.5], base: 13, def: 2 }
+    bathroom: { pos: [12.6, 2.5, -1.5], base: 13, def: 2 },
+    ritual:   { pos: [17.75, 2.5, -1.2], base: 14, def: 2 }
   };
   for (const id of ROOM_ORDER) {
     const d = lampDefs[id];
@@ -677,19 +694,27 @@ export function createWorld(opts) {
     scene.add(L);
     roomLights[id] = { light: L, mode: d.def, base: d.base, shades: [], glows: [] };
   }
+  // The yard is not in ROOM_ORDER (it shares the kitchen's x range, outside
+  // the front wall), so its light is added by hand: a soft moon lamp.
+  const yardLamp = new THREE.PointLight(0xcfd8ff, 13, 11, 1.25);
+  yardLamp.position.set(7, 3.4, 5.8);
+  scene.add(yardLamp);
+  roomLights.yard = { light: yardLamp, mode: 1, base: 13, shades: [], glows: [] };
 
   /* ------------ shell: floors, walls, partitions */
   const floorTex = {
     bedroom: carpet(), living: planks("#2b1a14", "#24150f"),
-    kitchen: checker("#1b1418", "#4a1420", 8), bathroom: checker("#d6d0da", "#26222c", 10)
+    kitchen: checker("#1b1418", "#4a1420", 8), bathroom: checker("#d6d0da", "#26222c", 10),
+    ritual: damask("#140a1e", "rgba(150,80,190,0.22)")
   };
   const wallTex = {
     bedroom: damask("#1e0f26", "rgba(150,80,190,0.18)"), living: damask("#1a0f15", "rgba(212,175,55,0.12)"),
-    kitchen: damask("#17121c", "rgba(192,57,43,0.12)"), bathroom: damask("#131620", "rgba(160,140,220,0.16)")
+    kitchen: damask("#17121c", "rgba(192,57,43,0.12)"), bathroom: damask("#131620", "rgba(160,140,220,0.16)"),
+    ritual: damask("#160b22", "rgba(165,94,234,0.22)")
   };
   // dollhouse base slab with a gold lip along the front edge
-  box(29.4, 0.3, 7.8, mat.trim, 0.5, -0.15, (Z_BACK + Z_FRONT) / 2);
-  box(29.4, 0.04, 0.05, mat.gold, 0.5, 0.0, Z_FRONT + 0.0);
+  box(34.9, 0.3, 7.8, mat.trim, 3.25, -0.15, (Z_BACK + Z_FRONT) / 2);
+  box(34.9, 0.04, 0.05, mat.gold, 3.25, 0.0, Z_FRONT + 0.0);
   for (const id of ROOM_ORDER) {
     const r = ROOMS[id], w = r.x1 - r.x0, cx = (r.x0 + r.x1) / 2;
     const fm = new THREE.MeshLambertMaterial({ map: floorTex[id] });
@@ -707,12 +732,12 @@ export function createWorld(opts) {
   // outer side walls
   const sideL = new THREE.Mesh(new THREE.PlaneGeometry(Z_FRONT - Z_BACK, WALL_H), new THREE.MeshLambertMaterial({ map: wallTex.bedroom }));
   sideL.rotation.y = Math.PI / 2; sideL.position.set(-14, WALL_H / 2, (Z_BACK + Z_FRONT) / 2); scene.add(sideL);
-  const sideR = new THREE.Mesh(new THREE.PlaneGeometry(Z_FRONT - Z_BACK, WALL_H), new THREE.MeshLambertMaterial({ map: wallTex.bathroom }));
-  sideR.rotation.y = -Math.PI / 2; sideR.position.set(15, WALL_H / 2, (Z_BACK + Z_FRONT) / 2); scene.add(sideR);
+  const sideR = new THREE.Mesh(new THREE.PlaneGeometry(Z_FRONT - Z_BACK, WALL_H), new THREE.MeshLambertMaterial({ map: wallTex.ritual }));
+  sideR.rotation.y = -Math.PI / 2; sideR.position.set(20.5, WALL_H / 2, (Z_BACK + Z_FRONT) / 2); scene.add(sideR);
   box(0.06, 0.9, Z_FRONT - Z_BACK, mat.trim, -13.97, 0.45, (Z_BACK + Z_FRONT) / 2);
-  box(0.06, 0.9, Z_FRONT - Z_BACK, mat.trim, 14.97, 0.45, (Z_BACK + Z_FRONT) / 2);
+  box(0.06, 0.9, Z_FRONT - Z_BACK, mat.trim, 20.47, 0.45, (Z_BACK + Z_FRONT) / 2);
   // partition stubs with gothic arch tops (pointed cap)
-  for (const x of [-6, 4, 10]) {
+  for (const x of [-6, 4, 10, 15]) {
     const len = 3.4;
     box(0.16, WALL_H, len, mat.black, x, WALL_H / 2, Z_BACK + len / 2);
     box(0.2, 0.08, len, mat.gold, x, WALL_H - 0.04, Z_BACK + len / 2);
@@ -751,6 +776,244 @@ export function createWorld(opts) {
       stem.userData.tap = "flowers"; tappables.push(stem);
     }
   }
+
+  /* ------------ yard, a real outdoor room (2.4.7) ----------------
+     The yard is a place you go, not scenery: a fence with a gate from the
+     kitchen, a bench, sakura trees with drifting petals, a bamboo grove,
+     and a hammock strung between the sakura trees. */
+  // Fence around the yard (low rails + posts), gate gap at x 6.2..7.1.
+  function fencePost(x, z) { const p = box(0.09, 0.85, 0.09, mat.darkWood, x, 0.42, z); const cap = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.16, 4), mat.gold); cap.position.set(x, 0.92, z); scene.add(cap); return p; }
+  function fenceRail(x0, x1, z, y) { return box(x1 - x0, 0.07, 0.05, mat.darkWood, (x0 + x1) / 2, y, z); }
+  function fenceRailZ(x, z0, z1, y) { return box(0.05, 0.07, z1 - z0, mat.darkWood, x, y, (z0 + z1) / 2); }
+  for (let x = 4.3; x <= 9.8; x += 1.1) fencePost(x, 8.2);
+  fenceRail(4.2, 9.8, 8.2, 0.35); fenceRail(4.2, 9.8, 8.2, 0.65);
+  for (let z = 3.6; z <= 8.2; z += 1.15) { fencePost(4.2, z); fencePost(9.8, z); }
+  fenceRailZ(4.2, 3.4, 8.2, 0.35); fenceRailZ(4.2, 3.4, 8.2, 0.65);
+  fenceRailZ(9.8, 3.4, 8.2, 0.35); fenceRailZ(9.8, 3.4, 8.2, 0.65);
+  fenceRail(4.2, 6.2, 3.4, 0.35); fenceRail(4.2, 6.2, 3.4, 0.65);
+  fenceRail(7.1, 9.8, 3.4, 0.35); fenceRail(7.1, 9.8, 3.4, 0.65);
+  // The gate: two posts with pointed caps + an arched top rail, tappable.
+  const gateG = new THREE.Group(); scene.add(gateG);
+  fencePost(6.2, 3.4); fencePost(7.1, 3.4);
+  const gateArch = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 8, 20, Math.PI), mat.gold);
+  gateArch.position.set(6.65, 0.85, 3.4); gateG.add(gateArch);
+  const gateBar = box(0.9, 0.05, 0.05, mat.darkWood, 6.65, 0.55, 3.4, gateG);
+  tagged(gateG, "gate");
+  // Bench to sit together, facing the pond.
+  const benchG = new THREE.Group(); scene.add(benchG);
+  box(1.4, 0.07, 0.45, mat.wood, 5.0, 0.44, 7.1, benchG);
+  box(1.4, 0.5, 0.06, mat.wood, 5.0, 0.72, 7.3, benchG);
+  for (const dx of [-0.6, 0.6]) box(0.08, 0.44, 0.4, mat.darkWood, 5.0 + dx, 0.22, 7.1, benchG);
+  const benchCushion = box(1.3, 0.06, 0.4, mat.velvetRed, 5.0, 0.5, 7.08, benchG);
+  tagged(benchG, "bench");
+  // Sakura trees by the koi pond — pink blossoms, petals drifting down.
+  const petals = [];
+  function sakuraTree(x, z) {
+    const g = new THREE.Group(); scene.add(g);
+    cyl(0.09, 0.15, 1.7, mat.darkWood, x, 0.85, z, 8, g);
+    const pinks = [0xff9ec4, 0xffb8d0, 0xff8fb8];
+    const blobs = [[0, 2.0, 0, 0.75], [0.5, 1.75, 0.2, 0.55], [-0.45, 1.8, -0.15, 0.6], [0.1, 2.3, -0.1, 0.55]];
+    blobs.forEach(([dx, dy, dz, r], i) => {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), new THREE.MeshLambertMaterial({ color: pinks[i % 3] }));
+      b.position.set(x + dx, dy, z + dz); b.scale.y = 0.75; g.add(b);
+    });
+    tagged(g, "sakura");
+    return g;
+  }
+  sakuraTree(9.6, 6.9); sakuraTree(6.0, 7.1);
+  const petalMat = new THREE.MeshBasicMaterial({ color: 0xffb8d0, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  for (let i = 0; i < 36; i++) {
+    const p = new THREE.Mesh(new THREE.CircleGeometry(0.05, 6), petalMat);
+    p.position.set(5 + Math.random() * 5, 0.2 + Math.random() * 2.6, 5.2 + Math.random() * 2.8);
+    p.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+    scene.add(p);
+    petals.push({ mesh: p, speed: 0.25 + Math.random() * 0.3, phase: Math.random() * 6 });
+  }
+  // Bamboo grove near the pond and sakura — stalks swaying.
+  const bambooStalks = [];
+  const bambooG = new THREE.Group(); scene.add(bambooG);
+  const bambooMat = new THREE.MeshLambertMaterial({ color: 0x4a7a3a });
+  const bambooLeaf = new THREE.MeshLambertMaterial({ color: 0x5a8a4a });
+  for (let i = 0; i < 7; i++) {
+    const bx = 9.45 + (i % 3) * 0.18, bz = 4.2 + Math.floor(i / 3) * 0.55 + (i % 2) * 0.12;
+    const h = 1.8 + (i % 3) * 0.35;
+    const stalk = cyl(0.028, 0.04, h, bambooMat, bx, h / 2, bz, 6, bambooG);
+    const base = (Math.random() - 0.5) * 0.06;
+    stalk.rotation.z = base;
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.35, 5), bambooLeaf);
+    leaf.position.set(bx + 0.06, h + 0.1, bz); bambooG.add(leaf);
+    bambooStalks.push({ mesh: stalk, base, phase: i * 1.3 });
+  }
+  tagged(bambooG, "bamboo");
+  // Hammock strung between the sakura trees — somewhere to relax together.
+  const hammockGroup = new THREE.Group(); scene.add(hammockGroup);
+  const hammockTex = canvasTex(128, 64, (g, w, h) => {
+    for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? "#7a1e3a" : "#e8d5c8"; g.fillRect(i * 16, 0, 16, h); }
+  });
+  const clothGeo = new THREE.PlaneGeometry(1.9, 0.65, 12, 1);
+  const cpos = clothGeo.attributes.position;
+  for (let i = 0; i < cpos.count; i++) {
+    const u = (cpos.getX(i) + 0.95) / 1.9;
+    cpos.setZ(i, -0.16 * Math.sin(u * Math.PI));
+  }
+  clothGeo.computeVertexNormals();
+  const hammockCloth = new THREE.Mesh(clothGeo, new THREE.MeshLambertMaterial({ map: hammockTex, side: THREE.DoubleSide }));
+  hammockCloth.rotation.x = -Math.PI / 2; hammockCloth.position.set(7.8, 0.62, 7.0);
+  hammockGroup.add(hammockCloth);
+  for (const s of [-1, 1]) {
+    const rope = cyl(0.015, 0.015, 0.55, new THREE.MeshLambertMaterial({ color: 0xc8b090 }), 7.8 + s * 1.05, 0.78, 7.0, 6, hammockGroup);
+    rope.rotation.z = s * 1.1;
+  }
+  tagged(hammockGroup, "hammock");
+
+  /* ------------ ritual room (2.4.7): altar, candles, crystal ball ------ */
+  // Pentagram rug in the middle of the room.
+  const pentTex = canvasTex(256, 256, (g, w) => {
+    g.fillStyle = "#1c0b28"; g.beginPath(); g.arc(128, 128, 128, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "#b8902e"; g.lineWidth = 5;
+    g.beginPath(); g.arc(128, 128, 116, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(128, 128, 96, 0, Math.PI * 2); g.stroke();
+    const pts = [];
+    for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * (Math.PI * 2 / 5); pts.push([128 + Math.cos(a) * 96, 128 + Math.sin(a) * 96]); }
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    [2, 4, 1, 3, 0].forEach((i) => g.lineTo(pts[i][0], pts[i][1]));
+    g.closePath(); g.stroke();
+    g.fillStyle = "#b8902e";
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; g.beginPath(); g.arc(128 + Math.cos(a) * 108, 128 + Math.sin(a) * 108, 3, 0, Math.PI * 2); g.fill(); }
+  });
+  const ritualRug = new THREE.Mesh(new THREE.CircleGeometry(1.5, 40), new THREE.MeshLambertMaterial({ map: pentTex }));
+  ritualRug.rotation.x = -Math.PI / 2; ritualRug.position.set(17.75, 0.006, -0.4); scene.add(ritualRug);
+  ritualRug.userData.tap = "ritual_rug"; tappables.push(ritualRug);
+  // The altar: dark wood table + velvet cloth against the back wall.
+  const altarG = new THREE.Group(); scene.add(altarG);
+  box(2.2, 0.08, 0.8, mat.black, 17.75, 0.78, -3.3, altarG);
+  box(2.24, 0.05, 0.84, mat.velvetRed, 17.75, 0.83, -3.3, altarG);
+  for (const dx of [-1.0, 1.0]) box(0.1, 0.76, 0.7, mat.darkWood, 17.75 + dx, 0.38, -3.3, altarG);
+  tagged(altarG, "altar");
+  // Three candles on the altar — they light, burn down, and go out.
+  const candleState = [{ lit: false, burn: 100 }, { lit: false, burn: 100 }, { lit: false, burn: 100 }];
+  const candleMeshes = [];
+  const candleCols = [0xe8dcc8, 0x8a5adf, 0x1c1c22];
+  [16.9, 17.75, 18.6].forEach((cx, i) => {
+    const c = cyl(0.05, 0.055, 0.28, new THREE.MeshLambertMaterial({ color: candleCols[i] }), cx, 1.0, -3.35, 10);
+    c.userData.tap = "candle"; c.userData.candleIndex = i; tappables.push(c);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.13, 8), new THREE.MeshBasicMaterial({ color: 0xffb13a }));
+    flame.position.set(cx, 1.2, -3.35); flame.visible = false; scene.add(flame);
+    const glow = glowSprite(0xff9a2a, 0.7, cx, 1.2, -3.3, null, 0);
+    candleMeshes.push({ candle: c, flame, glow, baseY: 1.0 });
+  });
+  let incenseOn = false;
+  const incenseSteam = [];
+  // Incense censor: brass bowl with smoke that rises when lit.
+  const censor = cyl(0.09, 0.06, 0.08, mat.gold, 16.6, 0.9, -3.3, 12);
+  censor.userData.tap = "incense"; tappables.push(censor);
+  for (let i = 0; i < 3; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xcfc8e0, transparent: true, opacity: 0, depthWrite: false }));
+    s.scale.setScalar(0.22); s.position.set(16.6, 0.95, -3.3);
+    s.userData = { x: 16.6, y: 0.95, z: -3.3, p: i / 3, size: 0.22 };
+    scene.add(s); incenseSteam.push(s);
+  }
+  // Crystal ball on a stand — for divination.
+  const ballStand = cyl(0.09, 0.12, 0.1, mat.gold, 17.0, 0.9, -3.3, 10);
+  ballStand.userData.tap = "crystalball"; tappables.push(ballStand);
+  const crystalBall = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 14), new THREE.MeshLambertMaterial({ color: 0x8a7ab8, transparent: true, opacity: 0.75 }));
+  crystalBall.position.set(17.0, 1.12, -3.3); scene.add(crystalBall);
+  crystalBall.userData.tap = "crystalball"; tappables.push(crystalBall);
+  const ballGlow = glowSprite(0xa040ff, 1.1, 17.0, 1.12, -3.2, null, 0.3);
+  // Crystals for divination: amethyst, rose quartz, clear quartz.
+  const crystalCols = [0x9a5adf, 0xff9ec4, 0xdfe6ee];
+  crystalCols.forEach((col, i) => {
+    const cr = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), new THREE.MeshLambertMaterial({ color: col }));
+    cr.position.set(18.35 + i * 0.22, 0.95, -3.28); cr.rotation.y = i * 0.7; scene.add(cr);
+    cr.userData.tap = "crystals"; cr.userData.crystalIndex = i; tappables.push(cr);
+  });
+  // The wand, lying on the altar.
+  const wand = cyl(0.015, 0.02, 0.55, mat.darkWood, 17.45, 0.88, -3.12, 6);
+  wand.rotation.z = Math.PI / 2 - 0.15; wand.rotation.y = 0.4;
+  wand.userData.tap = "wand"; tappables.push(wand);
+  const wandTip = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat.gold);
+  wandTip.position.set(17.72, 0.88, -3.12); scene.add(wandTip);
+  wandTip.userData.tap = "wand"; tappables.push(wandTip);
+  // Ingredient bowls — herbs from the yard live here.
+  const bowlCols = [0x4a7a3a, 0x9a5adf, 0xd9a03a];
+  bowlCols.forEach((col, i) => {
+    const b = cyl(0.09, 0.07, 0.06, mat.steel, 18.15 + i * 0.25, 0.89, -3.52, 10);
+    b.userData.tap = "bowls"; tappables.push(b);
+    const fill = cyl(0.075, 0.075, 0.02, new THREE.MeshLambertMaterial({ color: col }), 18.15 + i * 0.25, 0.92, -3.52, 10);
+    fill.userData.tap = "bowls"; tappables.push(fill);
+  });
+  // Scrying board leaning on the back wall — letters, YES / NO / GOODBYE.
+  const scryTex = canvasTex(256, 192, (g, w, h) => {
+    g.fillStyle = "#1c0b28"; g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#b8902e"; g.lineWidth = 4; g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = "#e8d5c8"; g.font = "700 22px sans-serif"; g.textAlign = "center";
+    g.fillText("A B C D E F G", 128, 44);
+    g.fillText("H I J K L M N", 128, 74);
+    g.fillText("O P Q R S T U", 128, 104);
+    g.fillText("V W X Y Z", 128, 134);
+    g.fillStyle = "#ff9ec4"; g.font = "700 20px sans-serif";
+    g.fillText("YES · NO · GOODBYE", 128, 168);
+  });
+  const scryBoard = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.85), new THREE.MeshLambertMaterial({ map: scryTex }));
+  scryBoard.position.set(19.35, 0.55, -3.9); scryBoard.rotation.x = -0.18; scene.add(scryBoard);
+  scryBoard.userData.tap = "scrying"; tappables.push(scryBoard);
+  // Magic staff leaning on the partition, skull on top.
+  const staffG = new THREE.Group(); scene.add(staffG);
+  const staffMesh = cyl(0.03, 0.035, 1.9, mat.darkWood, 15.55, 0.95, -3.5, 8, staffG);
+  staffMesh.rotation.z = 0.22;
+  const staffSkull = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), mat.skull);
+  staffSkull.position.set(15.75, 1.88, -3.5); staffG.add(staffSkull);
+  const staffGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.06), new THREE.MeshLambertMaterial({ color: 0xa040ff }));
+  staffGem.position.set(15.75, 1.72, -3.5); staffG.add(staffGem);
+  tagged(staffG, "staff");
+  // Scrying mirror on the back wall.
+  const rMirrorFrame = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.05, 8, 32), mat.gold);
+  rMirrorFrame.scale.set(0.85, 1.12, 1); rMirrorFrame.position.set(19.6, 1.7, -3.94); scene.add(rMirrorFrame);
+  rMirrorFrame.userData.tap = "ritual_mirror"; tappables.push(rMirrorFrame);
+  const rMirrorGlass = new THREE.Mesh(new THREE.CircleGeometry(0.49, 32), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (g, w) => {
+    const grd = g.createLinearGradient(0, 0, w, w); grd.addColorStop(0, "#241a3a"); grd.addColorStop(0.5, "#0d0a18"); grd.addColorStop(1, "#2a1a3a");
+    g.fillStyle = grd; g.fillRect(0, 0, w, w); g.fillStyle = "rgba(255,255,255,0.10)"; g.beginPath(); g.moveTo(20, 110); g.lineTo(50, 10); g.lineTo(70, 10); g.lineTo(40, 110); g.fill();
+  }) }));
+  rMirrorGlass.scale.set(0.85, 1.12, 1); rMirrorGlass.position.set(19.6, 1.7, -3.93); scene.add(rMirrorGlass);
+  rMirrorGlass.userData.tap = "ritual_mirror"; tappables.push(rMirrorGlass);
+  glowSprite(0xa040ff, 1.4, 19.6, 1.7, -3.8, null, 0.2);
+  // Candle + incense visuals, driven by ritualFx() from the app.
+  function applyRitualFx() {
+    candleState.forEach((c, i) => {
+      const m = candleMeshes[i]; if (!m) return;
+      m.flame.visible = c.lit;
+      m.glow.material.opacity = c.lit ? 0.5 : 0;
+      const s = 0.3 + 0.7 * (c.burn / 100);
+      m.candle.scale.y = s;
+      m.candle.position.y = 0.86 + 0.14 * s;
+      m.flame.position.y = 0.86 + 0.28 * s + 0.06;
+      m.glow.position.y = 0.86 + 0.28 * s + 0.06;
+    });
+  }
+  applyRitualFx();
+  // Weather + time of day over the yard (2.4.7): the sky changes with the
+  // hour, and rain / cloud can be picked in the Yard panel.
+  const weatherState = { mode: "auto" };
+  const rainGeo = new THREE.BufferGeometry();
+  const rainCount = 220, rainPos = new Float32Array(rainCount * 3);
+  for (let i = 0; i < rainCount; i++) { rainPos[i * 3] = 3.5 + Math.random() * 7; rainPos[i * 3 + 1] = Math.random() * 5; rainPos[i * 3 + 2] = 3.5 + Math.random() * 5; }
+  rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPos, 3));
+  const rainPts = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color: 0x9ab8d8, size: 0.06, transparent: true, opacity: 0.6 }));
+  rainPts.visible = false; scene.add(rainPts);
+  const sunSpr = glowSprite(0xffd27a, 3.4, 7, 5.6, 9.5, null, 0.5);
+  const moonSpr = glowSprite(0xdfe6ff, 2.4, 7, 5.2, 9.5, null, 0.45);
+  function applySky() {
+    const h = new Date().getHours();
+    const day = h >= 7 && h < 17, dusk = h >= 17 && h < 19;
+    const mode = weatherState.mode;
+    if (mode === "rain") { hemi.intensity = 0.85; renderer.setClearColor(0x11141c, 1); scene.fog.color.set(0x11141c); }
+    else if (mode === "cloudy") { hemi.intensity = 1.0; renderer.setClearColor(0x171a24, 1); scene.fog.color.set(0x171a24); }
+    else { hemi.intensity = day ? 1.55 : dusk ? 1.1 : 0.85; const c = day ? 0x2c3a55 : dusk ? 0x2a1a33 : 0x07050b; renderer.setClearColor(c, 1); scene.fog.color.set(c); }
+    sunSpr.visible = day && mode !== "rain";
+    moonSpr.visible = !day;
+    rainPts.visible = mode === "rain";
+  }
+  applySky();
 
   /* ------------ LED strips (bedroom + living) */
   const ledStrips = [];
@@ -1200,7 +1463,7 @@ export function createWorld(opts) {
     z = outside ? THREE.MathUtils.clamp(z, Z_FRONT + .08, 7.88) : THREE.MathUtils.clamp(z, -3.2, Z_FRONT);
     const pos = life.player.position;
     const fromOutside = pos.z > Z_FRONT;
-    const source = roomAt(pos.x), dest = roomAt(x);
+    const source = roomAt(pos.x, pos.z), dest = roomAt(x, z);
     lifePath = [];
     if (lifeArrive) lifeArrive(false);
     if (outside !== fromOutside) {
@@ -1227,7 +1490,7 @@ export function createWorld(opts) {
 
   function planPath(tx, tz) {
     const pts = [];
-    const sameRoom = roomAt(her.pos.x) === roomAt(tx) && Math.abs(her.pos.x - tx) < 4.5;
+    const sameRoom = roomAt(her.pos.x, her.pos.z) === roomAt(tx, tz) && Math.abs(her.pos.x - tx) < 4.5;
     if (!sameRoom) {
       if (her.pos.z < HALL_Z - 0.2) pts.push(new THREE.Vector3(her.pos.x, 0, HALL_Z));
       pts.push(new THREE.Vector3(tx, 0, HALL_Z));
@@ -1249,14 +1512,14 @@ export function createWorld(opts) {
     });
   }
   function goToPoint(x, z) {
-    x = Math.max(-13.5, Math.min(14.5, x)); z = Math.max(-2.9, Math.min(3.0, z));
+    x = Math.max(-13.5, Math.min(20.0, x)); z = Math.max(-2.9, Math.min(8.0, z));
     if (her.arriveCb) her.arriveCb(false);
     her.path = planPath(x, z); her.pendingSpot = null; her.pose = null;
     return new Promise((resolve) => { her.arriveCb = resolve; });
   }
   function goToRoom(room) {
     const list = ROOM_SPOTS[room]; if (!list) return Promise.resolve(false);
-    const main = { bedroom: "bedroom_center", living: "living_center", kitchen: "counter", bathroom: "bath_center" }[room];
+    const main = { bedroom: "bedroom_center", living: "living_center", kitchen: "counter", bathroom: "bath_center", ritual: "ritual_center", yard: "yard_center" }[room];
     return goToSpot(main);
   }
   function placeAt(name) {
@@ -1292,14 +1555,15 @@ export function createWorld(opts) {
       cam.wantPos.set(head.x + Math.sin(yaw) * dist * Math.cos(el), lift + Math.sin(el) * dist + 0.4, head.z + Math.cos(yaw) * dist * Math.cos(el));
     } else {
       const r = ROOMS[cam.room]; const cx = (r.x0 + r.x1) / 2; const W = r.x1 - r.x0;
+      const lookZ = cam.room === "yard" ? 5.8 : -1.6; // the yard sits outside the front wall
       const vfov = THREE.MathUtils.degToRad(camera.fov);
       const hfovHalf = Math.atan(Math.tan(vfov / 2) * aspect);
       const fitW = W * (portrait ? 0.7 : 0.98);
       let dist = Math.max((fitW / 2) / Math.tan(hfovHalf), 2.4 / Math.tan(vfov / 2));
       dist = Math.min(dist, portrait ? 15 : 13) * cam.zoom;
-      cam.wantLook.set(cx, 1.05, -1.6);
+      cam.wantLook.set(cx, 1.05, lookZ);
       const el = (portrait ? 0.48 : 0.3) + cam.pitch;
-      cam.wantPos.set(cx + Math.sin(cam.yaw) * dist * Math.cos(el), 1.05 + Math.sin(el) * dist, -1.6 + Math.cos(cam.yaw) * dist * Math.cos(el));
+      cam.wantPos.set(cx + Math.sin(cam.yaw) * dist * Math.cos(el), 1.05 + Math.sin(el) * dist, lookZ + Math.cos(cam.yaw) * dist * Math.cos(el));
     }
   }
   function setFollow() { cam.mode = "follow"; cam.room = null; cam.yaw = 0; cam.pitch = 0; cam.zoom = 1; }
@@ -1470,7 +1734,7 @@ export function createWorld(opts) {
       }
     }
     avatar.object3d.position.copy(her.pos);
-    const nowRoom = roomAt(her.pos.x);
+    const nowRoom = roomAt(her.pos.x, her.pos.z);
     if (nowRoom !== lastRoom) { lastRoom = nowRoom; her.room = nowRoom; onRoomChange(nowRoom); }
 
     // pose resolution
@@ -1492,6 +1756,27 @@ export function createWorld(opts) {
       k.mesh.position.set(8.2 + Math.cos(a) * k.r, 0.11, 5.9 + Math.sin(a) * k.r * 0.7);
       k.mesh.rotation.y = -a;
     }
+    // sakura petals drift down and reset at the top
+    for (const p of petals) {
+      p.mesh.position.y -= p.speed * dt;
+      p.mesh.position.x += Math.sin(t * 0.8 + p.phase) * dt * 0.15;
+      p.mesh.rotation.z += dt * 0.5;
+      if (p.mesh.position.y < 0.05) { p.mesh.position.y = 2.2 + Math.random() * 0.8; p.mesh.position.x = 5 + Math.random() * 5; p.mesh.position.z = 5.2 + Math.random() * 2.8; }
+    }
+    // bamboo sways, hammock rocks gently
+    bambooStalks.forEach((b) => { b.mesh.rotation.z = b.base + Math.sin(t * 0.9 + b.phase) * 0.035; });
+    hammockGroup.rotation.z = Math.sin(t * 0.7) * 0.025;
+    // incense smoke rises while lit; candle flames flicker
+    animateSteam(incenseSteam, incenseOn, t, 0.7, 0.4);
+    candleMeshes.forEach((m, i) => { if (candleState[i].lit) m.flame.scale.setScalar(0.9 + Math.sin(t * 11 + i * 2) * 0.15); });
+    // rain falls over the yard
+    if (rainPts.visible) {
+      const rp = rainPts.geometry.attributes.position;
+      for (let i = 0; i < rp.count; i++) { let y = rp.getY(i) - dt * 5; if (y < 0) y = 5; rp.setY(i, y); }
+      rp.needsUpdate = true;
+    }
+    // sky follows the hour (checked every couple of seconds)
+    if (!tick._skyAt || t - tick._skyAt > 2) { tick._skyAt = t; applySky(); }
 
     if (life) {
       if (lifePath.length) {
@@ -1612,7 +1897,7 @@ export function createWorld(opts) {
     getAvatarRepresentation: () => avatar.representation || "portrait",
     getAvatarMotion: () => avatar.motionState || null,
     goToSpot, goToPoint, goToRoom, placeAt,
-    getHer: () => ({ room: roomAt(her.pos.x), spot: her.spot, walking: her.path.length > 0, pose: her.pose, mode: her.mode || "idle", poseOverride: poseOverride && Date.now() < poseOverrideUntil ? poseOverride : null }),
+    getHer: () => ({ room: roomAt(her.pos.x, her.pos.z), spot: her.spot, walking: her.path.length > 0, pose: her.pose, mode: her.mode || "idle", poseOverride: poseOverride && Date.now() < poseOverrideUntil ? poseOverride : null }),
     setPose, clearPose: () => setPose(null),
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
@@ -1670,6 +1955,17 @@ export function createWorld(opts) {
       if (n > 0) { g.fillStyle = "#e74c3c"; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill(); g.strokeStyle = "#fff"; g.lineWidth = 4; g.stroke(); g.fillStyle = "#fff"; g.font = "700 30px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(n > 9 ? "9+" : String(n), 32, 34); }
       badgeTex.needsUpdate = true;
     },
+    // Ritual room FX (2.4.7): fx = { candles: [{lit, burn}...], incense: bool }
+    ritualFx(fx) {
+      if (!fx) return { candles: candleState.map((c) => ({ ...c })), incense: incenseOn };
+      if (Array.isArray(fx.candles)) fx.candles.forEach((c, i) => { if (!candleState[i]) return; if (c.lit != null) candleState[i].lit = !!c.lit; if (c.burn != null) candleState[i].burn = Math.max(0, Math.min(100, c.burn)); });
+      if (fx.incense != null) incenseOn = !!fx.incense;
+      applyRitualFx();
+      return { candles: candleState.map((c) => ({ ...c })), incense: incenseOn };
+    },
+    // Yard weather (2.4.7): "auto" (time of day), "clear", "cloudy", "rain"
+    setWeather(mode) { if (["auto", "clear", "cloudy", "rain"].indexOf(mode) === -1) mode = "auto"; weatherState.mode = mode; applySky(); return weatherState.mode; },
+    getWeather: () => weatherState.mode,
     resize
   };
 }

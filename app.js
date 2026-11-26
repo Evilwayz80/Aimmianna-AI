@@ -18,6 +18,7 @@ import { readMasterRelease } from "./master-release.js";
 import { makeCardGame } from "./cards.js";
 import { makeCCGGame } from "./ccg.js";
 import { makeSpiritGame } from "./spirit.js";
+import { makeRitualGame } from "./ritual.js";
 
 const LS_KEY = "aimmianna_iphone_v1"; // same key as v1 so nothing is lost
 const ASSETS = "assets/";
@@ -64,6 +65,8 @@ const DEFAULT_STATE = {
   pendingRoutine: null, last420Key: "", lastDevIdeaDay: "", devIdeas: [],
   lastCoffeeRoutine: "", lastWorkout: "",
   healthGoals: [], healthGoalsDay: "",
+  // ritual room + yard (2.4.7)
+  yardWeather: "auto",
   updateUrl: "", lastUpdateCheck: 0, lastSharedReleaseNotice: 0,
   // her own styling
   autoStyle: true, lastAutoStyle: "", manualStyleDay: "", lastNightLook: "", styleHistory: [],
@@ -1412,6 +1415,22 @@ function drawTarot() {
 }
 $("tarotDraw").addEventListener("click", drawTarot);
 
+/* ---------------- v2.4.7 Ritual Room: altar, spell book, tarot + stars, LARP ---------------- */
+const ritual = makeRitualGame(document.getElementById("ritualRoot"), {
+  state: () => state,
+  save: () => saveState(),
+  toast: (m, a) => toast(m, a),
+  gainXP: (k, n) => gainXP(k, n),
+  speak: (t) => { try { speakLine(t, { quietIfRecent: true }); } catch (e) {} },
+  tarot: TAROT,
+  goToSpot: (s) => world.goToSpot(s),
+  goToRoom: (r) => world.goToRoom(r),
+  doPose: (p, o) => doPose(p, o),
+  setFx: (fx) => { try { world.ritualFx(fx); } catch (e) {} },
+  openPanel: (id) => openPanel(id)
+});
+window.__ritual = ritual;
+
 /* ---------------- chat ---------------- */
 function addBubble(who, text, opts) {
   opts = opts || {};
@@ -1722,6 +1741,8 @@ function normRoom(r) {
   if (/liv|lounge|couch|tv/.test(r)) return "living";
   if (/kitch|fridge|coffee/.test(r)) return "kitchen";
   if (/bath|tub|shower|wash/.test(r)) return "bathroom";
+  if (/ritual|altar|witch|magic|spell/.test(r)) return "ritual";
+  if (/yard|garden|outside|pond|sakura|bamboo|hammock/.test(r)) return "yard";
   return ROOMS[r] ? r : "";
 }
 let routinePauseUntil = 0;
@@ -1932,8 +1953,10 @@ function localCommand(raw) {
   // Poses first: a pose request makes her do it, not just talk about it.
   const poseHit = poseFromChat(raw);
   if (poseHit) { doPose(poseHit, { speak: false }); const p = POSES.find((x) => x.id === poseHit); return pickOne(p.lines); }
-  const go = t.match(/\b(go|walk|head|move|come)\b.*\b(bed ?room|living ?room|lounge|kitchen|bath ?room)\b/);
+  const go = t.match(/\b(go|walk|head|move|come)\b.*\b(bed ?room|living ?room|lounge|kitchen|bath ?room|ritual ?room|witch ?room|yard|garden|outside)\b/);
   if (go) { const r = runToolSync("moveToRoom", { roomName: go[2] }); return r.ok ? pickOne(["On my way to the " + r.room.toLowerCase() + ".", "Okay okay, heading to the " + r.room.toLowerCase() + ".", "Coming — " + r.room.toLowerCase() + " it is."]) : null; }
+  if (/\b(light|light up)\b.*\bcandle/.test(t)) { ritual.lightCandle(); return "Candle's lit. Make a wish, Tony."; }
+  if (/\b(tend|water)\b.*\b(garden|flowers|herbs|plants)\b/.test(t)) { tendGarden(); return "Garden time — watering the flowers and growing herbs for the ritual room."; }
   if (/\b(turn on|put on|watch)\b.*\b(tv|television|a movie|a show)\b/.test(t)) { controlDevice("tv", "on"); return "TV's on. Scoot over, I'm taking the good side of the couch."; }
   if (/\b(turn off|shut off)\b.*\b(tv|television)\b/.test(t)) { controlDevice("tv", "off"); return "TV off. Back to just us."; }
   if (/\b(play|put on|turn on)\b.*\b(music|song|stereo|tunes|something)\b/.test(t)) { controlDevice("stereo", "play"); return "Music on. Don't judge my dancing, Tony."; }
@@ -4002,6 +4025,54 @@ function setBath3D(on, fromCare) {
 $("lightsBtn").addEventListener("click", () => { const m = world.lamp("all"); toast("All lamps: " + m); });
 const rt = $("routinesToggle"); if (rt) rt.addEventListener("click", () => { state.routinesOn = state.routinesOn === false; saveState(); renderRoutines(); toast("Routines " + (state.routinesOn === false ? "off" : "on") + "."); });
 
+/* ================= the yard panel (2.4.7) =================
+   A real outdoor room: weather, going outside together, the bench,
+   the hammock, the sakura — and tending the garden grows the herbs
+   that stock the ritual room. */
+function refreshYardStatus() {
+  const y = $("yardStatus"); if (y) {
+    const h = new Date().getHours();
+    const day = h >= 7 && h < 17, dusk = h >= 17 && h < 19;
+    const wx = state.yardWeather || "auto";
+    const wxLabel = wx === "rain" ? "rain falling" : wx === "cloudy" ? "cloudy" : wx === "clear" ? "sunny" : day ? "sunny" : dusk ? "dusk" : "night";
+    y.textContent = "The yard: " + wxLabel + " out there" + (day ? ", daytime" : dusk ? ", dusk" : ", night") + ". Petals on the sakura, koi in the pond.";
+  }
+  const yh = $("yardHerbs"); if (yh) {
+    const herbs = (state.ritual && state.ritual.herbs) || {};
+    yh.textContent = "Herbs stocked for the ritual room: Sage ×" + (herbs.sage || 0) + " · Lavender ×" + (herbs.lavender || 0) + " · Rosemary ×" + (herbs.rosemary || 0) + " · Mint ×" + (herbs.mint || 0) + ". Tend the garden to grow more.";
+  }
+}
+function markYardWx(mode) {
+  const map = { auto: "yardWxAuto", clear: "yardWxClear", cloudy: "yardWxCloudy", rain: "yardWxRain" };
+  Object.keys(map).forEach((k) => { const b = $(map[k]); if (b) b.classList.toggle("active", k === mode); });
+}
+function setYardWeather(mode, quiet) {
+  if (["auto", "clear", "cloudy", "rain"].indexOf(mode) === -1) mode = "auto";
+  state.yardWeather = mode; saveState();
+  if (world && world.setWeather) world.setWeather(mode);
+  markYardWx(mode); refreshYardStatus();
+  if (!quiet) toast("Yard weather: " + (mode === "auto" ? "time of day" : mode) + ".");
+}
+function tendGarden() {
+  holdRoutine(120000);
+  world.goToSpot("flowers").then((ok) => {
+    if (!ok) return;
+    doPose("water", { silent: true });
+    const gained = ritual.addHerbs(2, "tended");
+    speakLine(gained.length ? "Garden tended — grew " + gained.join(" and ") + " for the ritual room. The herbs are stocked, Tony." : "Garden's tended. The herb jars are full for now.", { quietIfRecent: true });
+    refreshYardStatus();
+  });
+}
+$("yardGoOut")?.addEventListener("click", () => { holdRoutine(180000); world.goToRoom("yard"); speakLine(pickOne(["Outside! Come on, the yard missed us.", "Through the gate — fresh air, finally. Race you to the pond?"]), { quietIfRecent: true }); });
+$("yardTend")?.addEventListener("click", tendGarden);
+$("yardBench")?.addEventListener("click", () => { holdRoutine(180000); world.goToSpot("bench"); speakLine(pickOne(["Bench time. Sit with me a sec — the pond looks so good from here.", "This bench is our spot now. Come sit, bestie."]), { quietIfRecent: true }); });
+$("yardHammock")?.addEventListener("click", () => { holdRoutine(300000); world.goToSpot("hammock"); speakLine(pickOne(["Hammock time. Scoot over — there's room for both of us, don't be shy.", "Ahh, swaying in the hammock under the sakura. This is the life, Tony."]), { quietIfRecent: true }); });
+$("yardSakura")?.addEventListener("click", () => { holdRoutine(180000); world.goToSpot("sakura"); speakLine(pickOne(["Under the sakura with you — petals falling and everything. This is the pretty corner.", "The blossoms are out. Sit with me under them? It's so calm here."]), { quietIfRecent: true }); });
+$("yardWxAuto")?.addEventListener("click", () => setYardWeather("auto"));
+$("yardWxClear")?.addEventListener("click", () => setYardWeather("clear"));
+$("yardWxCloudy")?.addEventListener("click", () => setYardWeather("cloudy"));
+$("yardWxRain")?.addEventListener("click", () => setYardWeather("rain"));
+
 /* ================= the 3D world ================= */
 const TAP_LINES = {
   "poster:peep": ["Lil Peep forever. Star Shopping still hits different.", "That poster's older than some of my plants. Don't touch it.", "Peep was a whole mood. Come over when you're sober, right?"],
@@ -4035,7 +4106,25 @@ function onWorldTap(name, info) {
     case "fridge": holdRoutine(60000); world.goToSpot("fridge").then((ok) => ok && speakLine(pickOne(TAP_LINES.fridge), { quietIfRecent: true })); return;
     case "counter": holdRoutine(60000); world.goToSpot("counter").then((ok) => ok && speakLine(pickOne(TAP_LINES.counter), { quietIfRecent: true })); return;
     case "pond": holdRoutine(120000); world.goToSpot("pond"); speakLine(pickOne(["The koi are out today. Look at them go — so calm, right?", "Watching the fish. It's weirdly peaceful. Come sit by the pond with me."]), { quietIfRecent: true }); return;
-    case "flowers": holdRoutine(120000); world.goToSpot("flowers"); speakLine(pickOne(["Watering my babies. They grow better when I talk to them, I swear.", "The flowers needed me. Look at them — they're thriving, Tony."]), { quietIfRecent: true }); return;
+    case "flowers": holdRoutine(120000); world.goToSpot("flowers"); ritual.addHerbs(1, "tended"); speakLine(pickOne(["Watering my babies. They grow better when I talk to them, I swear.", "The flowers needed me. Look at them — they're thriving, Tony."]), { quietIfRecent: true }); return;
+    /* --- yard, a real outdoor room (2.4.7) --- */
+    case "gate": holdRoutine(120000); world.goToSpot("yard_center"); speakLine(pickOne(["Outside! Come on, the yard missed us.", "Through the gate — fresh air, finally. Race you to the pond?"]), { quietIfRecent: true }); return;
+    case "bench": holdRoutine(180000); world.goToSpot("bench"); speakLine(pickOne(["Bench time. Sit with me a sec — the pond looks so good from here.", "This bench is our spot now. Come sit, bestie."]), { quietIfRecent: true }); return;
+    case "sakura": holdRoutine(180000); world.goToSpot("sakura"); speakLine(pickOne(["Under the sakura with you — petals falling and everything. This is the pretty corner.", "The blossoms are out. Sit with me under them? It's so calm here."]), { quietIfRecent: true }); return;
+    case "hammock": holdRoutine(300000); world.goToSpot("hammock"); speakLine(pickOne(["Hammock time. Scoot over — there's room for both of us, don't be shy.", "Ahh, swaying in the hammock under the sakura. This is the life, Tony."]), { quietIfRecent: true }); return;
+    case "bamboo": holdRoutine(120000); world.goToSpot("bamboo"); speakLine(pickOne(["The bamboo's swaying. Listen — it sounds like rain, but softer.", "Bamboo grove. It's the quietest spot in the whole yard. I love it here."]), { quietIfRecent: true }); return;
+    /* --- ritual room (2.4.7) --- */
+    case "altar": holdRoutine(120000); world.goToSpot("altar"); openPanel("ritualSection"); return;
+    case "candle": ritual.lightCandle(); return;
+    case "incense": ritual.toggleIncense(); return;
+    case "crystalball": ritual.crystalBall(); return;
+    case "crystals": ritual.pickCrystal(); return;
+    case "wand": ritual.waveWand(); return;
+    case "bowls": ritual.showBowls(); openPanel("ritualSection"); return;
+    case "scrying": ritual.scry(); return;
+    case "staff": ritual.takeStaff(); return;
+    case "ritual_mirror": ritual.mirrorVision(); return;
+    case "ritual_rug": ritual.sitRug(); return;
   }
   if (name.indexOf("lamp:") === 0) { const room = name.slice(5); const m = world.lamp(room); sfx.click(); toast(ROOMS[room].label + " lamp: " + m); return; }
   if (name.indexOf("poster:") === 0) { speakLine(pickOne(TAP_LINES[name] || TAP_LINES["poster:peep"]), { quietIfRecent: true }); return; }
@@ -4060,11 +4149,11 @@ els.roomSelect.addEventListener("change", () => {
 /* daily routine — where she hangs out by time of day */
 const ROUTINE = [
   [6, 9, ["coffee", "kitchen_table", "counter", "fridge", "vanity", "sink", "window"]],
-  [9, 12, ["pc", "pc", "couch", "rug", "living_center", "vanity", "flowers"]],
+  [9, 12, ["pc", "pc", "couch", "rug", "living_center", "vanity", "flowers", "sakura"]],
   [12, 14, ["kitchen_table", "counter", "fridge", "couch", "pond"]],
-  [14, 18, ["pc", "couch", "stereo", "rug", "vanity", "bedroom_center", "living_center", "flowers", "yard_center"]],
-  [18, 20, ["vanity", "sink", "bath_center", "couch", "kitchen_table", "window"]],
-  [20, 23, ["couch", "couch", "pc", "rug", "bedside", "living_center", "window", "yard_center"]],
+  [14, 18, ["pc", "couch", "stereo", "rug", "vanity", "bedroom_center", "living_center", "flowers", "yard_center", "bench", "sakura", "bamboo"]],
+  [18, 20, ["vanity", "sink", "bath_center", "couch", "kitchen_table", "window", "altar", "ritual_rug"]],
+  [20, 23, ["couch", "couch", "pc", "rug", "bedside", "living_center", "window", "yard_center", "altar", "hammock", "sakura"]],
   [23, 30, ["bed", "bed", "bed", "bedside"]]
 ];
 /* What she does when the routine system sends her to a spot (2.4.6): she
@@ -4079,7 +4168,13 @@ const SPOT_ROUTINE = {
   flowers: { pose: "water", label: "tending the flowers", lines: ["Watering my babies. They grow better when I talk to them, I swear.", "The flowers needed me. Look at them — they're thriving, Tony."] },
   pc: { pose: "type", label: "working at the PC", lines: ["On the PC. Let me work my magic, one key at a time.", "Computer time. Give me a sec — I'm in the zone."] },
   living_center: { pose: "stretch", label: "stretching in the living room", lines: ["Stretching it out. Mmm, that's the good one.", "Little stretch. My whole body needed that."] },
-  bedroom_center: { pose: "stretch", label: "stretching in the bedroom", lines: ["Stretching in the bedroom. Slow and easy.", "Ahh — okay, that's the good stretch."] }
+  bedroom_center: { pose: "stretch", label: "stretching in the bedroom", lines: ["Stretching in the bedroom. Slow and easy.", "Ahh — okay, that's the good stretch."] },
+  altar: { pose: "art", label: "at the altar", lines: ["At the altar. Candles, crystals, the whole witch vibe. Come do a little magic with me?", "Lighting a candle at the altar. The room feels different in here — calmer, somehow."] },
+  ritual_rug: { pose: "crossleg", label: "sitting in the circle", lines: ["Sitting in the circle. It's our quiet spot — come sit with me?", "Cross-legged in the pentagram. This room just gets me, you know?"] },
+  bench: { pose: "sit", label: "sitting on the bench", lines: ["On the bench by the pond. The koi are doing their little laps. Come sit with me?", "Bench time. Petals falling, bamboo swaying — this is the good part of the day."] },
+  sakura: { pose: "read", label: "under the sakura", lines: ["Under the sakura trees. Petals everywhere — it's like the yard is snowing pink.", "Sitting under the blossoms. Come join me? It's so pretty here."] },
+  hammock: { pose: "lie", label: "in the hammock", lines: ["In the hammock, swaying. There's room for you, you know. Come lie with me?", "Hammock + sakura petals + you. Best afternoon ever, lowkey."] },
+  bamboo: { pose: "pond", label: "in the bamboo grove", lines: ["In the bamboo grove. It's so quiet in here — just the stalks swaying.", "Bamboo time. Come stand in here with me? It feels like a whole different world."] }
 };
 let routineTarget = null; // {spot, pose, from: "wander"|"named"} — set when the routine system moves her
 let nextMoveAt = Date.now() + 20000;
@@ -4136,6 +4231,8 @@ function onArrive(spot) {
     } else if (rt.from === "named" && rt.pose) {
       world.setPose(rt.pose, 45000);
     }
+    // Herb loop (2.4.7): tending the flowers grows herbs for the ritual room.
+    if (spot === "flowers") ritual.addHerbs(1, "routine");
   }
 }
 
@@ -4589,6 +4686,8 @@ function initWorld() {
   world.placeAt(pickOne(routineSpots(h)));
   els.roomLabel.textContent = ROOMS[world.getHer().room].label;
   if (state.led) world.led(state.led);
+  if (state.yardWeather && world.setWeather) world.setWeather(state.yardWeather);
+  markYardWx(state.yardWeather || "auto"); refreshYardStatus();
   if (h >= 22 || h < 6) world.lamp("all", "purple");
   if (state.lowPower && world.setLowPower) world.setLowPower(true);
   // follow her by default
