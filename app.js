@@ -30,7 +30,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.2";
+const VERSION = "Aimmianna 3D v2.4.7";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 window.__aimmiannaPauseSignals = (keepPendingCamera = false) => lifeSim?.pauseSignals(keepPendingCamera);
