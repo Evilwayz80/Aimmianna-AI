@@ -11,7 +11,7 @@
    gyro parallax, daily routine, tarot.
 
    Keys live only on this device (localStorage), never hardcoded, never logged. */
-import { createWorld, ROOMS, SPOTS, ROOM_SPOTS } from "./world3d.js";
+import { createWorld, ROOMS, SPOTS, ROOM_SPOTS, SUMMER_WARDROBE } from "./world3d.js";
 import { openMemoryLink, newPairingCode, offerPairing, claimPairing, checkRelay } from "./companion-memory.js";
 import { MASTER_RELEASE } from "./master-release-config.js";
 import { readMasterRelease } from "./master-release.js";
@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.18";
+const VERSION = "Aimmianna 3D v2.4.19";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -638,25 +638,35 @@ const SUMMER_WARDROBE_KINDS = [
   ["dye", "Hair dye — tap a colour:"],
 ];
 function summerWardrobeSummary() {
+  // 2.4.19: read picks from the world when it exists, else from the
+  // saved state — the summary used to fall back to a hardcoded string.
   const w = world?.getSummerWardrobe?.();
-  if (!w) return "Summer: Midnight Velvet Gown • Platform Mary Janes • Smoky Doll Eyes • Loose Waves • Crimson Ends";
-  const label = (kind) => (w.catalogue[kind].find((o) => o.id === w.picks[kind]) || {}).label || w.picks[kind];
+  const catalogue = w ? w.catalogue : SUMMER_WARDROBE;
+  const picks = w ? w.picks : state.summerWardrobe;
+  const label = (kind) => (catalogue[kind].find((o) => o.id === picks[kind]) || {}).label || picks[kind];
   return "Summer: " + ["outfit", "shoes", "makeup", "hair", "dye"].map(label).join(" • ");
 }
 function refreshSummerWardrobeStatus() {
   if (els.summerWardrobeStatus) els.summerWardrobeStatus.textContent = summerWardrobeSummary();
 }
 function renderSummerWardrobe() {
+  // 2.4.19: the lists render from the catalogue even when the 3D world
+  // has not booted (world null) — a failed or slow world load used to
+  // leave this panel silently empty, which read as "wardrobe not
+  // loading". Picks always save; they reach the figure (aura + tint)
+  // as soon as the world exists. A plain note says so when the room
+  // is still loading, instead of a blank panel.
   const w = world?.getSummerWardrobe?.();
-  if (!w) return;
+  const catalogue = w ? w.catalogue : SUMMER_WARDROBE;
+  const picks = w ? w.picks : state.summerWardrobe;
   SUMMER_WARDROBE_KINDS.forEach(([kind]) => {
     const host = $("summer" + kind[0].toUpperCase() + kind.slice(1) + "List");
     if (!host) return;
     host.innerHTML = "";
-    w.catalogue[kind].forEach((item) => {
+    catalogue[kind].forEach((item) => {
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "pick-btn" + (w.picks[kind] === item.id ? " picked" : "");
+      b.className = "pick-btn" + (picks[kind] === item.id ? " picked" : "");
       b.textContent = item.label;
       b.title = item.desc;
       b.addEventListener("click", () => setSummerWardrobePick(kind, item.id));
@@ -664,14 +674,29 @@ function renderSummerWardrobe() {
     });
   });
   refreshSummerWardrobeStatus();
+  let note = $("summerWardrobeNote");
+  if (!world) {
+    if (!note) {
+      note = document.createElement("p");
+      note.id = "summerWardrobeNote";
+      note.className = "wardrobe-note";
+      const sec = $("summerSection");
+      if (sec) sec.appendChild(note);
+    }
+    if (note) note.textContent = "The 3D room is still loading — your pick is saved and will show on her as soon as it opens.";
+  } else if (note) note.remove();
 }
 function setSummerWardrobePick(kind, id) {
-  if (!world?.setSummerWardrobe?.(kind, id)) return;
+  // 2.4.19: validate against the catalogue, not the world — a pick used
+  // to be dropped silently when the world had not booted. It applies to
+  // the figure when the world exists and always saves to the device.
+  const item = SUMMER_WARDROBE[kind] && SUMMER_WARDROBE[kind].find((o) => o.id === id);
+  if (!item) return;
+  if (world?.setSummerWardrobe) world.setSummerWardrobe(kind, id);
   state.summerWardrobe[kind] = id;
   saveState();
   renderSummerWardrobe();
-  const item = world.getSummerWardrobe().catalogue[kind].find((o) => o.id === id);
-  const msg = item ? "Summer is wearing: " + item.label + " — " + item.desc : "Summer's look updated.";
+  const msg = "Summer is wearing: " + item.label + " — " + item.desc;
   if (els.summerWardrobeMsg) els.summerWardrobeMsg.textContent = msg;
   toast(msg);
 }
@@ -704,7 +729,9 @@ function resetWardrobe() {
   saveState(); applyFigure(); markPickedButtons();
 }
 function buildPickList(elId, choices, kind) {
-  const box = $(elId); box.innerHTML = "";
+  const box = $(elId);
+  if (!box) return; // 2.4.19: a missing host used to throw and kill the whole module
+  box.innerHTML = "";
   choices.forEach((c) => {
     const b = document.createElement("button");
     b.type = "button"; b.dataset.kind = kind; b.dataset.id = c.id;
@@ -1014,7 +1041,9 @@ const spirit = makeSpiritGame(document.getElementById("spiritRoot"), {
   speak: (t) => { try { speakLine(t, { quietIfRecent: true }); } catch (e) {} }
 });
 window.__spirit = spirit;
-renderCloset();
+// 2.4.19: a closet render failure must never take down the app —
+// if it throws here, the panel shows the classic lists instead.
+try { renderCloset(); } catch (e) { console.warn("Closet failed to render:", e); }
 
 
 /* ---------------- her own day-of-week styling ----------------
@@ -3462,7 +3491,7 @@ window.__aimmiannaMasterOverride = masterOverride;
    new PIN. */
 function buildWorldBackup() {
   return {
-    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 259,
+    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 260,
     exportedAt: new Date().toISOString(), state: JSON.parse(JSON.stringify(state))
   };
 }
