@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.13";
+const VERSION = "Aimmianna 3D v2.4.14";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -48,6 +48,8 @@ const DEFAULT_STATE = {
   fishKey: "", fishVoice: "", elevenKey: "", elevenVoice: "",
   avatarMode: "model", avatarOutfit: "closet", avatarWeapon: "none",
   wardrobe: { outfit: "", hair: "", lipstick: "", eyeshadow: "", blush: "", foundation: "" },
+  // Summer's wardrobe picks (2.4.14): goth emo princess, shared side only.
+  summerWardrobe: { outfit: "midnight_velvet", shoes: "mary_janes", makeup: "smoky_doll", hair: "loose_waves", dye: "crimson_ends" },
   wardrobePicks: [],
   careBrush: 0, careTeeth: 0, careBaths: 0, catchBest: 0,
   bedtimeOn: false, bedtimeTime: "22:30",
@@ -109,6 +111,7 @@ function loadState() {
     const s = JSON.parse(raw);
     const out = Object.assign(freshState(), s);
     out.wardrobe = Object.assign(freshState().wardrobe, s.wardrobe || {});
+    out.summerWardrobe = Object.assign(freshState().summerWardrobe, s.summerWardrobe || {});
     out.closet = Object.assign(freshState().closet, s.closet || {});
     out.perms = Object.assign(freshState().perms, s.perms || {});
     out.quickReplies = Array.isArray(s.quickReplies) ? s.quickReplies.filter((x) => typeof x === "string").slice(0, 8) : [];
@@ -154,7 +157,7 @@ const els = {};
  "greetingAutoBtn","greetingBtn","voiceStatus","aiStatus","perplexityStatus","typecastStatus","fishStatus",
  "elevenStatus","neuralStatus","memoryView","memoryToggle","careStatus","careCounts","careStage",
  "careFigure","careBath","careBubbles","careSteam","careSparkle","toast","toastMsg","toastAct",
- "wardrobePreview","wardrobeMsg","gameStatus","memoryGrid","emberField","emberTarget",
+ "wardrobePreview","wardrobeMsg","summerWardrobeStatus","summerWardrobeMsg","gameStatus","memoryGrid","emberField","emberTarget",
  "emberHint","diceFace","diceResult","tvFile","tvPlayer","tvStatus","stereoFile",
  "stereoPlayer","stereoStatus","musicMood","albumView","albumImg","albumEmpty",
  "albumLabel","albumFile","noteInput","noteList","bedtimeTime","bedtimeStatus",
@@ -203,7 +206,8 @@ const PANEL_TITLES = {
   stereoSection: "Stereo", albumSection: "Photo Album", notesSection: "Chalkboard Notes",
   calendarSection: "Calendar", bedSection: "Bedtime", alarmSection: "Alarm Clock",
   settingsSection: "Settings", skillsSection: "Her Skills & Bond", lifeSection: "Private Game Mode", cardsSection: "Card Games",
-  routinesSection: "Routines", posesSection: "Poses", rulesSection: "Rules & Appreciation"
+  routinesSection: "Routines", posesSection: "Poses", rulesSection: "Rules & Appreciation",
+  summerSection: "Summer's Wardrobe"
 };
 const TALL = { chatSection: 1, wardrobeSection: 1, careSection: 1, gamesSection: 1, settingsSection: 1, skillsSection: 1, tvSection: 1, stereoSection: 1, lifeSection: 1, cardsSection: 1, routinesSection: 1, posesSection: 1, rulesSection: 1 };
 let openPanelId = "";
@@ -283,6 +287,7 @@ function onPanelOpened(id) {
   if (id === "settingsSection") { renderGuestCodes(); refreshDeviceRole(); }
   if (id === "posesSection") renderPoses();
   if (id === "wardrobeSection") refreshOutfitStatus();
+  if (id === "summerSection") renderSummerWardrobe();
   if (id === "tvSection" || id === "stereoSection") { media.renderFavs(); media.refreshStatus(); }
 }
 
@@ -616,6 +621,60 @@ function lookSummary() {
   return s;
 }
 function refreshWardrobeStatus() { els.wardrobeStatus.textContent = "Wardrobe: " + lookSummary(); }
+
+/* ---------------- Summer's wardrobe (2.4.14) ----------------
+   High-class goth emo princess — outfits, shoes, makeup, hairstyles
+   and hair dye, from the catalogue in world3d.js. Picks save per
+   device (shared side only, never private) and apply through
+   world.setSummerWardrobe. Her figure is one mesh / one material, so
+   an outfit pick shows as a subtle colour cast plus the matching aura
+   glow under her feet; makeup, shoes and hairstyle picks are recorded
+   and shown here. The full beauty salon is queued for later. */
+const SUMMER_WARDROBE_KINDS = [
+  ["outfit", "Gowns — tap one to dress her in it:"],
+  ["shoes", "Shoes — tap a pair:"],
+  ["makeup", "Makeup — pick a look:"],
+  ["hair", "Hairstyles — tap one:"],
+  ["dye", "Hair dye — tap a colour:"],
+];
+function summerWardrobeSummary() {
+  const w = world?.getSummerWardrobe?.();
+  if (!w) return "Summer: Midnight Velvet Gown • Platform Mary Janes • Smoky Doll Eyes • Loose Waves • Crimson Ends";
+  const label = (kind) => (w.catalogue[kind].find((o) => o.id === w.picks[kind]) || {}).label || w.picks[kind];
+  return "Summer: " + ["outfit", "shoes", "makeup", "hair", "dye"].map(label).join(" • ");
+}
+function refreshSummerWardrobeStatus() {
+  if (els.summerWardrobeStatus) els.summerWardrobeStatus.textContent = summerWardrobeSummary();
+}
+function renderSummerWardrobe() {
+  const w = world?.getSummerWardrobe?.();
+  if (!w) return;
+  SUMMER_WARDROBE_KINDS.forEach(([kind]) => {
+    const host = $("summer" + kind[0].toUpperCase() + kind.slice(1) + "List");
+    if (!host) return;
+    host.innerHTML = "";
+    w.catalogue[kind].forEach((item) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pick-btn" + (w.picks[kind] === item.id ? " picked" : "");
+      b.textContent = item.label;
+      b.title = item.desc;
+      b.addEventListener("click", () => setSummerWardrobePick(kind, item.id));
+      host.appendChild(b);
+    });
+  });
+  refreshSummerWardrobeStatus();
+}
+function setSummerWardrobePick(kind, id) {
+  if (!world?.setSummerWardrobe?.(kind, id)) return;
+  state.summerWardrobe[kind] = id;
+  saveState();
+  renderSummerWardrobe();
+  const item = world.getSummerWardrobe().catalogue[kind].find((o) => o.id === id);
+  const msg = item ? "Summer is wearing: " + item.label + " — " + item.desc : "Summer's look updated.";
+  if (els.summerWardrobeMsg) els.summerWardrobeMsg.textContent = msg;
+  toast(msg);
+}
 function setWardrobePick(kind, id, file, msg) {
   state.wardrobe[kind] = id;
   state.wardrobePicks = state.wardrobePicks.filter((p) => p.kind !== kind);
@@ -5187,6 +5246,7 @@ function onWorldTap(name, info) {
   switch (name) {
     case "her": openPanel("chatSection"); world.setTalking(true); setTimeout(() => { if (!speaking) world.setTalking(false); }, 900); return;
     case "guest": world.guestEmote("greet_02"); speakLine(pickOne(["That's Autumn! Say hi — she's here with us now.", "Autumn's here! Go say hi to her."]), { quietIfRecent: true }); return;
+    case "guestSummer": world.summerEmote("greet_04"); speakLine(pickOne(["That's Summer! Say hi — she's here with us now.", "Summer's here! Go say hi to her, she's a princess today."]), { quietIfRecent: true }); return;
     case "floor": if (info && info.point) { holdRoutine(120000); world.goToPoint(info.point.x, info.point.z); setStatus("walking over", 2500); } return;
     case "bed": holdRoutine(300000); world.goToSpot("bed"); toast("She flops onto the bed.", { label: "Bedtime", fn: () => openPanel("bedSection") }); return;
     case "nightstand": case "phone": {
@@ -5817,6 +5877,9 @@ function initWorld() {
     onRoomChange: (room) => { els.roomLabel.textContent = ROOMS[room] ? ROOMS[room].label : ""; }
   });
   refreshAvatarMode();
+  // Summer's saved wardrobe picks (2.4.14): re-apply them to her figure.
+  if (world.setSummerWardrobe) Object.entries(state.summerWardrobe || {}).forEach(([k, v]) => world.setSummerWardrobe(k, v));
+  renderSummerWardrobe();
   $("lifeEntry").hidden = IS_WALLPAPER;
   world.setAnchors([$("anchorBubble"), $("anchorFx")]);
   const h = new Date().getHours();
