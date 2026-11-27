@@ -1,6 +1,6 @@
 /* Aimmianna 3D service worker — network-first for the app shell, cache-first for
    images/models, never caches /api/ or third-party (Gemini, Spotify, YouTube). */
-const VERSION = "aimmianna-3d-v2.4.15";
+const VERSION = "aimmianna-3d-v2.4.16";
 const SHELL = [
   "./", "index.html", "styles.css", "app.js", "companion-memory.js", "master-release.js", "master-release-config.js", "world3d.js", "outfits3d.js", "cards.js", "game-updates.js", "assets/cards/m_bunny.webp", "assets/cards/m_mew.webp", "assets/cards/m_pip.webp", "assets/cards/m_coral.webp", "assets/cards/m_ember.webp", "assets/cards/m_lune.webp", "assets/cards/m_raven.webp", "assets/models/outfit3d-mask.png", "vendor/three.module.min.js",
   "SAYINGS.json", "manifest.webmanifest", "assets/figure/aimmianna_human_fullbody.png",
