@@ -354,6 +354,13 @@ video, audio { width: 100%; margin: 8px 0; border-radius: 10px; }
 /* ---------- Her World menu (2.4.9, inside Permissions) ---------- */
 #worldMenu { margin: 8px 0; }
 .world-rule { background: var(--panel2); border: 1px solid var(--gold); border-left-width: 4px; border-radius: var(--radius); padding: 12px; font-size: 14px; line-height: 1.45; color: var(--text); margin: 4px 0 10px; }
+.rules-list { margin: 0 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; color: var(--text); }
+.rules-list li { margin: 8px 0; }
+.tony-words { background: var(--panel2); border: 1px solid var(--gold); border-left-width: 4px; border-radius: var(--radius); padding: 14px; margin: 4px 0 12px; }
+.tony-words p { font-size: 15px; line-height: 1.5; color: var(--text); margin: 0 0 10px; font-style: italic; }
+.tony-words p:last-of-type { margin-bottom: 0; }
+.tony-words footer { font-size: 13px; color: var(--gold); margin-top: 10px; }
+#thanksText p { font-size: 14px; line-height: 1.5; color: var(--text); margin: 8px 0; }
 .perm-row.perm-locked { background: rgba(212, 175, 55, .07); border: 1px solid rgba(212, 175, 55, .35); border-radius: 10px; padding: 10px; margin: 8px 0; }
 .perm-row.perm-locked input { accent-color: var(--gold); }
 .perm-row.perm-locked b { color: var(--gold); }
@@ -560,6 +567,17 @@ input[type="url"], input[type="date"] { width: 100%; min-height: 44px; padding: 
 .pin-card input { width: 100%; font-size: 18px; letter-spacing: 4px; text-align: center; }
 .pin-error { color: #ff7a7a; font-size: 13px; margin: 8px 0 0; font-weight: 700; }
 .pin-error[hidden] { display: none; }
+/* 2.4.10: two doors, two keys — the who-screen reuses the PIN screen's look. */
+.who-stack { flex-direction: column; }
+.who-stack .wide-btn { width: 100%; }
+.who-link { background: none; border: none; color: var(--gold); font-size: 13px; text-decoration: underline; cursor: pointer; padding: 4px 0; }
+.guest-code-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--panel2); }
+.guest-code-item .guest-name { font-weight: 700; }
+.guest-code-item .guest-code { font-family: monospace; font-size: 18px; letter-spacing: 2px; color: var(--gold); display: block; margin: 4px 0; }
+.guest-code-item .guest-status { font-size: 13px; color: var(--muted); }
+.guest-req-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--panel2); }
+.guest-req-item .guest-name { font-weight: 700; }
+.guest-req-item select { width: 100%; margin: 8px 0; }
 
 /* ---------- phone overlay ---------- */
 .phone-ov { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(5, 3, 8, .62); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); padding: 16px; }
