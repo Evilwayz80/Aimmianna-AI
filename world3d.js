@@ -1586,15 +1586,17 @@ export function createWorld(opts) {
     for (const buf of buffers) { combined.set(new Uint8Array(buf), offset); offset += buf.byteLength; }
     return new Promise((resolve, reject) => loader.parse(combined.buffer, base, resolve, reject));
   }
-  // 2.4.15: Summer's relaxed idle arms. Her GLB has no idle clip, so with
+  // 2.4.16: Summer's relaxed idle arms. Her GLB has no idle clip, so with
   // no clip playing she renders in her T-pose bind pose — arms outstretched.
   // These local-space rotations hang her arms at her sides: upper arms down
   // with a slight outward splay, forearms down with a slight forward elbow
   // bend. They were computed from her actual skeleton (bind-pose joint
   // directions, verified by simulation — see BUILD_NOTE_2.4.15.md): the
   // simulation lands both hands beside her thighs, just outside them, never
-  // through the torso and never behind her back. Applied POSE_BONES-style
-  // after mixer.update, only while no clip is playing.
+  // through the torso and never behind her back. The rotations themselves
+  // are unchanged in 2.4.16; only HOW they are applied changed, because
+  // 2.4.15 multiplied them onto the bones every frame and they compounded
+  // into a spin. See applyIdleArms below for the fixed application.
   const SUMMER_IDLE_ARMS = {
     L_Upperarm: [{ axis: [-1, 0, 0], angle: 1.6164 }],
     R_Upperarm: [{ axis: [1, 0, 0], angle: 1.6635 }],
@@ -1618,6 +1620,10 @@ export function createWorld(opts) {
       this._idleArmWeight = 0;
       this._idleArmQ = new THREE.Quaternion();
       this._idleArmAxis = new THREE.Vector3();
+      // 2.4.16: bind-pose snapshot for the idle arms, and the action
+      // currently fading out after a clip stops (see applyIdleArms).
+      this._idleArmBind = {};
+      this._fadingAction = null;
     }
     async load() {
       try {
@@ -1654,6 +1660,10 @@ export function createWorld(opts) {
         this.model = model;
         // 2.4.15: resolve the relaxed-idle arm bones (Summer only).
         if (this.relaxedIdle) for (const name of Object.keys(SUMMER_IDLE_ARMS)) { const b = model.getObjectByName(name); if (b) this.idleArmBones[name] = b; }
+        // 2.4.16: snapshot the bind-pose quaternions BEFORE any clip
+        // plays and before the idle layer runs, so the layer can always
+        // set the arms from a known base instead of accumulating.
+        if (this.relaxedIdle) for (const name of Object.keys(this.idleArmBones)) this._idleArmBind[name] = this.idleArmBones[name].quaternion.clone();
         this.group.visible = true;
         this.playMotion("idle");
         this.mixer.update(0);
@@ -1671,9 +1681,17 @@ export function createWorld(opts) {
         // old one and rest in a procedural idle instead of freezing
         // mid-walk with the walk clip still playing.
         if (previous) previous.fadeOut(0.22);
+        this._fadingAction = previous || null;
         this.motion = name;
         return true;
       }
+      // 2.4.16: put the idle-arm bones back to their bind pose BEFORE
+      // the clip activates. The mixer saves the bones current values as
+      // its restore point when a clip first plays, so this keeps that
+      // restore point the true bind pose, never a pose the idle layer
+      // has rotated.
+      if (this.relaxedIdle) for (const name of Object.keys(this._idleArmBind)) { const b = this.idleArmBones[name]; if (b) b.quaternion.copy(this._idleArmBind[name]); }
+      this._fadingAction = null;
       next.reset().setEffectiveWeight(1).play();
       if (previous) next.crossFadeFrom(previous, 0.22, false);
       this.motion = name;
@@ -1683,23 +1701,40 @@ export function createWorld(opts) {
       if (this.mixer) this.mixer.update(dt);
       this.applyIdleArms(dt);
     }
-    // 2.4.15: Summer's relaxed idle arms. No clip is playing exactly when
-    // the current motion is the missing "idle" — playMotion("idle") fades
-    // the old clip out and leaves the mixer with nothing to play, so the
-    // skeleton would sit in its T-pose bind pose. This layer hangs her
-    // arms instead. The weight eases toward 1 at idle and toward 0 while
-    // a clip plays (same dt*6 easing as Aimmianna's POSE_BONES layer), so
-    // the arms blend between hanging and the clip with no snap — including
-    // across the 0.22s clip fade-out, where both ease at once.
+    // 2.4.16: Summer's relaxed idle arms, fixed. 2.4.15 applied the
+    // rotations with bone.quaternion.multiply every frame, the same
+    // pattern as Aimmianna's POSE_BONES layer. That works for her
+    // because she always has a clip playing, so the mixer rewrites
+    // her bones from the clip each frame and the multiply lands on a
+    // fresh pose. Summer has no idle clip, so with no clip playing
+    // the mixer touches nothing and the multiply compounded every
+    // frame, spinning her arms around, which read on the phone as
+    // flapping. The fix: while a clip is active or fading out the
+    // mixer still rewrites the bones each frame, so multiplying onto
+    // its fresh output stays correct and blends the clip into the
+    // hang. Once the clip is fully gone the mixer stops touching the
+    // bones, so the layer instead SETS each bone from its stored
+    // bind pose every frame. The two modes meet at the same value
+    // when the fade ends, so there is no snap either way.
     applyIdleArms(dt) {
       if (!this.relaxedIdle || !this.model) return;
       const want = this.motion === "idle" ? 1 : 0;
       this._idleArmWeight += (want - this._idleArmWeight) * Math.min(1, dt * 6);
+      // Snap the weight to its ends once it is close: the easing is
+      // asymptotic, so without this the arms would keep creeping a
+      // couple of centimetres for seconds after they look settled.
+      // Snapping makes the hang exactly still in steady idle.
+      if (Math.abs(1 - this._idleArmWeight) < 0.005) this._idleArmWeight = 1;
+      else if (this._idleArmWeight < 0.005) this._idleArmWeight = 0;
       const w = this._idleArmWeight;
       if (w < 0.02) return;
+      const fading = this._fadingAction && this._fadingAction.getEffectiveWeight() > 0.02;
+      if (!fading) this._fadingAction = null;
+      const clipDriving = this.motion !== "idle" || fading;
       for (const [name, turns] of Object.entries(SUMMER_IDLE_ARMS)) {
         const bone = this.idleArmBones[name];
         if (!bone) continue;
+        if (!clipDriving) bone.quaternion.copy(this._idleArmBind[name]);
         for (const turn of turns) {
           this._idleArmAxis.set(turn.axis[0], turn.axis[1], turn.axis[2]).normalize();
           this._idleArmQ.setFromAxisAngle(this._idleArmAxis, turn.angle * w);
