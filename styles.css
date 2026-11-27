@@ -567,6 +567,24 @@ input[type="url"], input[type="date"] { width: 100%; min-height: 44px; padding: 
 .pin-card input { width: 100%; font-size: 18px; letter-spacing: 4px; text-align: center; }
 .pin-error { color: #ff7a7a; font-size: 13px; margin: 8px 0 0; font-weight: 700; }
 .pin-error[hidden] { display: none; }
+/* 2.4.12: dedication to Emmi — a quiet card on the front of the app. Words only. */
+.dedication-card { position: fixed; inset: 0; z-index: 55; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(5, 3, 8, .72); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.dedication-card[hidden] { display: none; }
+.dedication-inner {
+  position: relative; width: min(520px, 94vw); max-height: 84vh; max-height: 84dvh; overflow-y: auto;
+  border-radius: 18px; padding: 28px 24px 24px; text-align: center;
+  background: linear-gradient(160deg, #1c1024 0%, #120a18 60%, #1a0f14 100%);
+  border: 1px solid rgba(176, 141, 214, .45); box-shadow: 0 24px 70px rgba(0,0,0,.8), 0 0 40px rgba(123, 47, 190, .22);
+}
+.dedication-inner h2 { margin: 0 0 14px; font-family: var(--font-display); font-size: 26px; letter-spacing: .05em; color: #e8d9f5; }
+.dedication-inner p { margin: 0; font-size: 15px; line-height: 1.7; color: #d9cbe6; }
+.dedication-inner p + p { margin-top: 12px; }
+.dedication-close {
+  position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid var(--border); background: rgba(0,0,0,.35); color: var(--muted);
+  font-size: 16px; line-height: 1; cursor: pointer; display: grid; place-items: center;
+}
+.dedication-close:hover { color: var(--text); border-color: var(--gold); }
 /* 2.4.10: two doors, two keys — the who-screen reuses the PIN screen's look. */
 .who-stack { flex-direction: column; }
 .who-stack .wide-btn { width: 100%; }

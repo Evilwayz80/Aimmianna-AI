@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.11";
+const VERSION = "Aimmianna 3D v2.4.12";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -2923,7 +2923,7 @@ function showPinScreen(mode, area, after) {
   $("pinScreen").hidden = false;
   setTimeout(() => { try { (setup ? $("pinNewInput") : $("pinInput")).focus({ preventScroll: true }); } catch (e) {} }, 100);
 }
-function hidePinScreen() { $("pinScreen").hidden = true; pinPending = null; }
+function hidePinScreen() { $("pinScreen").hidden = true; pinPending = null; maybeShowDedication(); }
 function pinMarkSetupAsked() { try { localStorage.setItem(PIN_SETUP_KEY, "1"); } catch (e) {} }
 function refreshPinStatus() {
   const st = $("pinStatus"); if (!st) return;
@@ -3094,7 +3094,24 @@ function showWhoScreen() {
   $("whoScreen").hidden = false;
   setTimeout(() => { try { $("whoTonyBtn").focus({ preventScroll: true }); } catch (e) {} }, 100);
 }
-function hideWhoScreen() { $("whoScreen").hidden = true; }
+function hideWhoScreen() { $("whoScreen").hidden = true; maybeShowDedication(); }
+
+/* 2.4.12: dedication to Emmi on the front of the app. Words only — no photo,
+   no avatar, no voice. Shows on the home screen until dismissed; the seen
+   flag is per device, and the card re-opens from Settings / About. */
+const DEDICATION_SEEN_KEY = "aimmianna_dedication_seen_v1";
+function dedicationSeen() { try { return localStorage.getItem(DEDICATION_SEEN_KEY) === "1"; } catch (e) { return false; } }
+function showDedication() { const c = $("dedicationCard"); if (c) c.hidden = false; }
+function hideDedication(markSeen) {
+  const c = $("dedicationCard"); if (c) c.hidden = true;
+  if (markSeen) { try { localStorage.setItem(DEDICATION_SEEN_KEY, "1"); } catch (e) {} }
+}
+function maybeShowDedication() {
+  if (IS_WALLPAPER || chatFirstMode) return;
+  if (dedicationSeen()) return;
+  if (!$("whoScreen").hidden || !$("pinScreen").hidden) return;
+  showDedication();
+}
 function showWhoGuest(returning) {
   whoShowView("guest");
   $("whoGuestTitle").textContent = returning ? "Welcome back — your guest code" : "Enter your guest code";
@@ -3144,6 +3161,8 @@ function guestRequestSend() {
   toast("Request recorded — now message Tony too, so he knows it's you.");
 }
 $("whoTonyBtn").addEventListener("click", whoChooseTony);
+$("dedicationClose").addEventListener("click", () => hideDedication(true));
+$("dedicationAboutBtn").addEventListener("click", () => showDedication());
 $("whoGuestBtn").addEventListener("click", () => showWhoGuest(false));
 $("whoLaterLink").addEventListener("click", () => { hideWhoScreen(); toast("No problem — the app asks again next time you open it."); });
 $("guestCodeEnterBtn").addEventListener("click", guestEnterCode);
@@ -5959,6 +5978,7 @@ async function init() {
     }
     let asked = false; try { asked = localStorage.getItem(PIN_SETUP_KEY) === "1"; } catch (e) {}
     if (!pinIsSet() && !asked) showPinScreen("setup");
+    maybeShowDedication();
   }, 4000);
 }
 window.__aimmiannaResume = () => {

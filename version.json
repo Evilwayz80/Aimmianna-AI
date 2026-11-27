@@ -1,10 +1,10 @@
 {
   "version": "2.1.1",
   "build": 211,
-  "webVersion": "2.4.11",
-  "webBuild": 251,
+  "webVersion": "2.4.12",
+  "webBuild": 252,
   "release": "beta",
-  "webNotes": "Beta — just for Tony and Muse. Five new mood poses for her: sad, happy, thankful, grateful, and excited — in the Poses menu and by asking in chat. Everything from 2.4.10 still stands: two doors, two keys (on first launch the app asks who is opening it — Tony's path is the PIN prompt, only he ever sees it; the guest path is a guest-code prompt, never any PIN screen, and guests only ever see the shared side). Guest codes: one code per guest, and each guest keeps the same code — Tony's decision; Tony makes, changes, and takes away guest codes in Settings (behind his PIN). A guest cannot make their own new code. Also new in 2.4.10: a Rules & Appreciation page, linked from Settings and from the Her World menu — the full constitution in her own words, and thanks to Tony, Muse (Shadow), Perplexity, and Aimmianna herself. Push-to-talk deep links (?voice=1 / ?chat=1), the PIN guard, the Her World menu with the constitution, the Perplexity backup toggle, and world backup in Settings all still stand. Rule 1 never changes, no exceptions, not even by Tony.",
+  "webNotes": "New in 2.4.12: a dedication to Emmi — \"For Emmi\" — on the front of the app, in Tony and Autumn's words. It shows on the home screen until dismissed, and re-opens any time from Settings / About. Words only — no photo. Beta — just for Tony and Muse. Five new mood poses for her: sad, happy, thankful, grateful, and excited — in the Poses menu and by asking in chat. Everything from 2.4.10 still stands: two doors, two keys (on first launch the app asks who is opening it — Tony's path is the PIN prompt, only he ever sees it; the guest path is a guest-code prompt, never any PIN screen, and guests only ever see the shared side). Guest codes: one code per guest, and each guest keeps the same code — Tony's decision; Tony makes, changes, and takes away guest codes in Settings (behind his PIN). A guest cannot make their own new code. Also new in 2.4.10: a Rules & Appreciation page, linked from Settings and from the Her World menu — the full constitution in her own words, and thanks to Tony, Muse (Shadow), Perplexity, and Aimmianna herself. Push-to-talk deep links (?voice=1 / ?chat=1), the PIN guard, the Her World menu with the constitution, the Perplexity backup toggle, and world backup in Settings all still stand. Rule 1 never changes, no exceptions, not even by Tony.",
   "sharedRelease": {
     "revision": 229,
     "text": "Apartment Life and shared companion memory affect both devices. Check for updates on your iPhone and Android."
