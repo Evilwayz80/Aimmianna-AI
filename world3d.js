@@ -479,7 +479,11 @@ class BuiltInAvatar extends BillboardAvatar {
           // 2.4.17: pin the slim_petite morph target on (same as the guests
           // in GuestAvatar.load) so her slimmer build can never silently
           // drop off — her file carries it with weights [1].
-          if (mesh.morphTargetInfluences?.length) mesh.morphTargetInfluences[0] = 1;
+          // 2.4.18: pin EVERY morph target, not just [0] — the guests now
+          // carry slim_petite AND head_match, and pinning by index [0] only
+          // would silently drop the second one. (Aimmianna still has just
+          // the one target, so this loop pins the same thing for her.)
+          if (mesh.morphTargetInfluences?.length) for (let i = 0; i < mesh.morphTargetInfluences.length; i++) mesh.morphTargetInfluences[i] = 1;
           // A conservative bound covers both clips without rescanning the
           // skin every frame. A tap still checks the actual deformed mesh.
           mesh.computeBoundingSphere();
@@ -1551,9 +1555,9 @@ export function createWorld(opts) {
      Game Mode (guests are blocked from it; see app.js). Same loading
      pattern as Tony's Tripo GLB in life-figures.js: background load,
      auto-fit, idle + walk + hug + heart_pose clips from her own file.
-     Her file ships as 4 chunks (.part0..3) through the Contents API —
+     Her file ships as 5 chunks (.part0..4) through the Contents API —
      the chunked loader glues them back together before parsing, so the
-     single 64 MB file is never uploaded.
+     single 72 MB file is never uploaded.
      SCALE RULE (2.4.17 balance — the old equal-scale rule is gone):
      the four figures now stand at distinct natural heights — Tony 1.92,
      Autumn 1.86, Aimmianna 1.81, Summer 1.78 (Summer 5'5" is the anchor).
@@ -1564,12 +1568,12 @@ export function createWorld(opts) {
      only, and nothing about her private side goes to the shared world. */
   const GUEST_HEIGHT = 1.86; // 2.4.17: Autumn 5'8" (1.86) — was 1.7
   const GUEST_MODEL = "Autumn_Tripo3d_0_ggkz.glb";
-  const GUEST_PARTS = 4; // chunked upload: .part0..3, 16,048,506 bytes each
+  const GUEST_PARTS = 5; // chunked upload: .part0..4, 14,466,422 bytes each (last 14,466,420) — 2.4.18 head_match bake grew the file to 72,332,108 bytes
   // Summer (2.4.14) — 1.78 units, the 5'5" anchor of the 2.4.17 balance.
   // She is now 0.03 shorter than Aimmianna (1.81), not level with her.
   const SUMMER_HEIGHT = 1.78;
   const SUMMER_MODEL = "Summer_0_cy1n.glb";
-  const SUMMER_PARTS = 4; // chunked upload: .part0..3, 15,087,325 bytes each
+  const SUMMER_PARTS = 5; // chunked upload: .part0..4, 13,641,352 bytes each (last 13,641,348) — 2.4.18 head_match bake grew the file to 68,206,756 bytes
   /* Chunked GLB loader (2.4.14 patch) — the git push to github.com is
      blocked, so big models ship as ~16 MB pieces through the Contents
      API instead of one file. Fetch the parts in order, glue the bytes
@@ -1642,7 +1646,10 @@ export function createWorld(opts) {
         this.actions = Object.fromEntries(animations.map((clip) => [clip.name, this.mixer.clipAction(clip)]));
         // The slim_petite morph target is baked with weight 1; pin it on
         // explicitly so the petite fit can never silently drop off.
-        model.traverse((mesh) => { if (mesh.isSkinnedMesh && mesh.morphTargetInfluences?.length) mesh.morphTargetInfluences[0] = 1; });
+        // 2.4.18: pin EVERY morph target, not just [0] — the guests now
+        // carry slim_petite AND head_match (Tony carries head_match alone),
+        // and pinning [0] only would silently drop head_match.
+        model.traverse((mesh) => { if (mesh.isSkinnedMesh && mesh.morphTargetInfluences?.length) for (let i = 0; i < mesh.morphTargetInfluences.length; i++) mesh.morphTargetInfluences[i] = 1; });
         const bounds = new THREE.Box3().setFromObject(model);
         const center = bounds.getCenter(new THREE.Vector3());
         const scale = this.height / (bounds.max.y - bounds.min.y);
@@ -1824,7 +1831,7 @@ export function createWorld(opts) {
      wiring of any kind. */
   const TONY_HEIGHT = 1.92; // 2.4.17: Tony 5'10" (1.92) — was 1.78
   const TONY_MODEL = "Tony_0_7ymz.glb";
-  const TONY_PARTS = 4; // chunked upload: .part0..3, 13,705,867 bytes each
+  const TONY_PARTS = 5; // chunked upload: .part0..4, 12,603,391 bytes each (last 12,603,388) — 2.4.18 head_match bake grew the file to 63,016,952 bytes
   const tony = {
     pos: new THREE.Vector3(SPOTS.living_center.x, 0, SPOTS.living_center.z + 0.55),
     heading: 0, moving: false, emoteLeft: 0, heartPending: false,
