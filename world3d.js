@@ -368,6 +368,47 @@ const POSE_BONES = {
     R_Upperarm: [{ axis: [1, 0, 0], angle: 1.8 }],
     L_Upperarm: [{ axis: [-1, 0, 0], angle: 1.8 }],
     Spine02: [{ axis: [0, 0, -1], angle: -0.15 }]
+  },
+  // 2.4.11 mood poses — Tony asked for sad, happy, thankful, grateful, excited.
+  sad: {
+    Spine02: [{ axis: [0, 0, -1], angle: 0.35 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.5 }],
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 0.2 }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 0.2 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.15 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.15 }]
+  },
+  happy: {
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 1.6, osc: { amp: 0.2, speed: 4 } }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 1.6, osc: { amp: 0.2, speed: 4 } }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.5 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.5 }],
+    Spine02: [{ axis: [0, 0, -1], angle: -0.15 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: -0.25 }]
+  },
+  thankful: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.6 }],
+    L_Upperarm: [{ axis: [0, 0, -1], angle: 0.6 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 1.2 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 1.2 }],
+    Spine02: [{ axis: [0, 0, -1], angle: 0.35 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.3 }]
+  },
+  grateful: {
+    R_Upperarm: [{ axis: [0, 0, -1], angle: 0.7 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 1.4 }],
+    L_Upperarm: [{ axis: [1, 0, 0], angle: 0.2 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.2 }],
+    Spine02: [{ axis: [0, 0, -1], angle: 0.1 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: 0.2 }]
+  },
+  excited: {
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 2.4, osc: { amp: 0.4, speed: 7 } }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 2.4, osc: { amp: 0.4, speed: 7 } }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.4 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.4 }],
+    Spine02: [{ axis: [0, 0, -1], angle: -0.2 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: -0.3 }]
   }
 };
 const POSE_BONE_NAMES = [...new Set(Object.values(POSE_BONES).flatMap((m) => Object.keys(m)))];

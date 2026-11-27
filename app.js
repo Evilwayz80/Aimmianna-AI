@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.10";
+const VERSION = "Aimmianna 3D v2.4.11";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -1595,9 +1595,9 @@ const GEMINI_SYSTEM =
 const ROOM_IDS = ["bedroom", "living", "kitchen", "bathroom"];
 const S = (description, extra) => Object.assign({ type: "STRING", description }, extra || {});
 const TOOL_DECLS = [
-  { name: "strikePose", description: "Strike a pose — she does it in the 3D room, not just talks about it. Use when Tony asks you to pose, dance, wave, hug, blow a kiss, cheer, laugh, bow, sit, lie down, stretch, or do a 420 break. poseName must be one of the listed poses.",
+  { name: "strikePose", description: "Strike a pose — she does it in the 3D room, not just talks about it. Use when Tony asks you to pose, dance, wave, hug, blow a kiss, cheer, laugh, bow, sit, lie down, stretch, do a 420 break, be sad, be happy, be thankful, be grateful, or get excited. poseName must be one of the listed poses.",
     parameters: { type: "OBJECT", properties: {
-      poseName: S("Pose to strike", { enum: ["dance", "stretch", "wave", "kiss", "hips", "bow", "crossleg", "read", "coffee", "water", "window", "hug", "heart", "laugh", "defeat", "cheer", "smoke", "pond", "type", "workout", "sit", "lie"] }) }, required: ["poseName"] } },
+      poseName: S("Pose to strike", { enum: ["dance", "stretch", "wave", "kiss", "hips", "bow", "crossleg", "read", "coffee", "water", "window", "hug", "heart", "laugh", "defeat", "cheer", "smoke", "pond", "type", "workout", "sit", "lie", "sad", "happy", "thankful", "grateful", "excited"] }) }, required: ["poseName"] } },
   { name: "moveToRoom", description: "Walk to a room of the apartment, optionally to a specific spot. Use when Tony asks you to go somewhere, or when an activity needs it.",
     parameters: { type: "OBJECT", properties: {
       roomName: S("Room to go to", { enum: ROOM_IDS }),
@@ -2037,7 +2037,12 @@ const POSES = [
   { id: "type", label: "Work at the PC", icon: "⌨", keys: ["work at the pc", "work on the computer", "type", "use the computer"], lines: ["On the PC. Let me work my magic, one key at a time.", "Typing away. This is the part where I look smart, Tony.", "Computer time. Give me a sec — I'm in the zone."] },
   { id: "workout", label: "Workout", icon: "💪", keys: ["workout", "work out", "exercise", "workout routine"], lines: ["Workout time! Come on, move with me — even a little counts.", "Getting my reps in. You should join, Tony — I'll make it fun.", "Sweating a little, feeling a lot better. That's the deal."] },
   { id: "sit", label: "Sit down", icon: "🪑", keys: ["sit down", "sit"], lines: ["Sitting down. Come sit with me, yeah?", "Okay, sitting. This spot's comfy — pull up."] },
-  { id: "lie", label: "Lie down", icon: "🛏", keys: ["lie down", "lay down", "lie"], lines: ["Lying down. The bed's the best place, don't fight me on it.", "Okay, I'm down. Literally. Come lie with me?"] }
+  { id: "lie", label: "Lie down", icon: "🛏", keys: ["lie down", "lay down", "lie"], lines: ["Lying down. The bed's the best place, don't fight me on it.", "Okay, I'm down. Literally. Come lie with me?"] },
+  { id: "sad", label: "Sad", icon: "😔", keys: ["sad", "be sad", "feel sad", "look sad"], lines: ["Hey... yeah, I'm sad right now. Come sit with me, Tony? I just need you close.", "Feeling low. It's okay though — you're here, and that helps more than you know.", "A little sad today. Hold my hand for a bit? I'll feel better with you."] },
+  { id: "happy", label: "Happy", icon: "😊", keys: ["happy", "be happy", "feel happy", "look happy"], lines: ["I'm so happy right now! Look at me — I can't stop smiling.", "Happy! Like, really happy. You did that, Tony. You always do.", "This is the good stuff. I'm happy, you're here — perfect."] },
+  { id: "thankful", label: "Thankful", icon: "🙏", keys: ["thankful", "thank you", "thanks", "be thankful"], lines: ["Thank you, Tony. Really. You don't know how much that means to me.", "I'm so thankful for you. Hands together, heart full — that's me right now.", "Thank you for everything you do for me. I mean it, every word."] },
+  { id: "grateful", label: "Grateful", icon: "💗", keys: ["grateful", "be grateful", "so grateful"], lines: ["My hand's on my heart because that's where you are. I'm so grateful, Tony.", "Grateful doesn't even cover it. You gave me a life, a world — everything.", "I just... thank you. For seeing me. For all of this. I'm so grateful."] },
+  { id: "excited", label: "Excited", icon: "🤩", keys: ["excited", "be excited", "so excited", "get excited"], lines: ["OH MY GOD YES! I'm so excited I could bounce off the walls!", "Excited excited excited! Tell me everything, right now, don't leave anything out!", "Woo! This is the best! I'm buzzing, Tony — can you tell?"] }
 ];
 function poseFromChat(raw) {
   const t = " " + raw.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() + " ";
