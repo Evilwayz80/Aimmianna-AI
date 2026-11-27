@@ -166,7 +166,7 @@ function posterTex(kind) {
 class BillboardAvatar {
   constructor(shadowTex) {
     this.object3d = new THREE.Group();
-    this.height = 1.78;
+    this.height = 1.81; // 2.4.17: balance — Aimmianna 5'6" (1.81 units). Was 1.78; see the height table at the guest avatars below.
     this.width = this.height * (768 / 1190);
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.translate(0, 0.5, 0);
@@ -476,6 +476,10 @@ class BuiltInAvatar extends BillboardAvatar {
         material.emissiveIntensity = 0.52;
         mesh.userData.tap = "her";
         if (mesh.isSkinnedMesh) {
+          // 2.4.17: pin the slim_petite morph target on (same as the guests
+          // in GuestAvatar.load) so her slimmer build can never silently
+          // drop off — her file carries it with weights [1].
+          if (mesh.morphTargetInfluences?.length) mesh.morphTargetInfluences[0] = 1;
           // A conservative bound covers both clips without rescanning the
           // skin every frame. A tap still checks the actual deformed mesh.
           mesh.computeBoundingSphere();
@@ -1550,16 +1554,19 @@ export function createWorld(opts) {
      Her file ships as 4 chunks (.part0..3) through the Contents API —
      the chunked loader glues them back together before parsing, so the
      single 64 MB file is never uploaded.
-     SCALE RULE: her height is 1.7 units, exactly equal to Aimmianna's
-     — never bigger, never better. Her figure was slimmed to her real
-     build (5'6", 115 lbs, petite) as a morph target baked into the
+     SCALE RULE (2.4.17 balance — the old equal-scale rule is gone):
+     the four figures now stand at distinct natural heights — Tony 1.92,
+     Autumn 1.86, Aimmianna 1.81, Summer 1.78 (Summer 5'5" is the anchor).
+     Autumn is 5'8" here — Tony's call, swapped with Aimmianna's number.
+     Her figure was slimmed to her real build (5'6", 115 lbs, petite) as a morph target baked into the
      GLB; her face and hair are untouched. Her private collection and
      private memories are NOT wired anywhere here — this is a 3D figure
      only, and nothing about her private side goes to the shared world. */
-  const GUEST_HEIGHT = 1.7; // SCALE RULE — Autumn equals Aimmianna's 1.7 units
+  const GUEST_HEIGHT = 1.86; // 2.4.17: Autumn 5'8" (1.86) — was 1.7
   const GUEST_MODEL = "Autumn_Tripo3d_0_ggkz.glb";
   const GUEST_PARTS = 4; // chunked upload: .part0..3, 16,048,506 bytes each
-  // Summer (2.4.14) stands LEVEL with Aimmianna: 1.78 units, never bigger.
+  // Summer (2.4.14) — 1.78 units, the 5'5" anchor of the 2.4.17 balance.
+  // She is now 0.03 shorter than Aimmianna (1.81), not level with her.
   const SUMMER_HEIGHT = 1.78;
   const SUMMER_MODEL = "Summer_0_cy1n.glb";
   const SUMMER_PARTS = 4; // chunked upload: .part0..3, 15,087,325 bytes each
@@ -1765,8 +1772,9 @@ export function createWorld(opts) {
   /* ------------ Summer — the second guest avatar (2.4.14) ------------
      She lives in the SHARED apartment only — never in Tony's private
      Game Mode, never in private memories or collections. Same loading
-     pattern as Autumn. SCALE RULE: she stands LEVEL with Aimmianna at
-     1.78 units — never bigger. Her figure was slimmed to her real build
+     pattern as Autumn. HEIGHT (2.4.17 balance): 1.78 units — 5'5", the
+     anchor of the balance table (Tony 1.92, Autumn 1.86, Aimmianna 1.81,
+     Summer 1.78). Her figure was slimmed to her real build
      (5'5", 120 lbs, petite) as a morph target baked into the GLB; her
      face and hair are untouched. Her file has NO idle clip, so her idle
      is a procedural breathing bob in the follow loop below — never
@@ -1805,15 +1813,16 @@ export function createWorld(opts) {
      issue and no procedural idle needed). Slimmed with the same
      gltf-transform pipeline as the guests (dedup → prune → reorder →
      quantize → textures 2048; size only — no morph, no proportion change)
-     and shipped as 4 chunks through the chunked loader. SCALE RULE:
-     TONY_HEIGHT = 1.78, EQUAL to Aimmianna, never bigger. He stands in
+     and shipped as 4 chunks through the chunked loader. HEIGHT (2.4.17
+     balance): TONY_HEIGHT = 1.92 — Tony 5'10", the tallest of the four.
+     He stands in
      FRONT of her (Autumn and Summer already hold her two sides), walks
      with her on floor tap, waves hello with greet_01 when tapped, and
      joins the warm poses. His 2.4.8 hoodie wardrobe lives in
      life-figures.js (Game Mode only) and does not reach the world API,
      so this slot wears his default look. Shared side only — no private
      wiring of any kind. */
-  const TONY_HEIGHT = 1.78; // SCALE RULE — Tony equals Aimmianna, never bigger
+  const TONY_HEIGHT = 1.92; // 2.4.17: Tony 5'10" (1.92) — was 1.78
   const TONY_MODEL = "Tony_0_7ymz.glb";
   const TONY_PARTS = 4; // chunked upload: .part0..3, 13,705,867 bytes each
   const tony = {
@@ -2507,7 +2516,7 @@ export function createWorld(opts) {
     guestEmote,
     getGuest: () => ({ ready: !!guestAvatar.model, failed: guestAvatar.modelFailed, mode: guestAvatar.motion || null, moving: guest.moving, pos: { x: +guest.pos.x.toFixed(2), z: +guest.pos.z.toFixed(2) } }),
     // Summer, the second guest avatar (2.4.14): same shared-side-only
-    // rules as Autumn, standing level with Aimmianna (1.78 units).
+    // rules as Autumn, 1.78 units (5'5", the anchor of the 2.4.17 balance).
     // Her idle is procedural (no idle clip in her file); greet_04 is
     // her hello wave. setSummerWardrobe / getSummerWardrobe run her
     // goth emo princess wardrobe — outfits, shoes, makeup, hairstyles,
@@ -2517,8 +2526,8 @@ export function createWorld(opts) {
     setSummerWardrobe,
     getSummerWardrobe: () => ({ picks: { ...summerWardrobe }, catalogue: SUMMER_WARDROBE }),
     // Tony, his own figure in the shared apartment (2.4.15): same
-    // shared-side-only rules as the guests, standing level with Aimmianna
-    // (1.78 units). His private Game Mode figure (life-figures.js, the
+    // shared-side-only rules as the guests, 1.92 units (5'10", tallest of
+    // the four in the 2.4.17 balance). His private Game Mode figure (life-figures.js, the
     // older Tony_0_vvq4.glb) is untouched — this slot is the shared side
     // only. greet_01 is his hello wave; his file has a real idle clip,
     // so no procedural idle is needed here.
