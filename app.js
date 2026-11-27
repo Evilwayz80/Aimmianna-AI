@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.12";
+const VERSION = "Aimmianna 3D v2.4.13";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -5186,6 +5186,7 @@ function onWorldTap(name, info) {
   if (openPanelId && window.innerWidth < 900) closePanel();
   switch (name) {
     case "her": openPanel("chatSection"); world.setTalking(true); setTimeout(() => { if (!speaking) world.setTalking(false); }, 900); return;
+    case "guest": world.guestEmote("greet_02"); speakLine(pickOne(["That's Autumn! Say hi — she's here with us now.", "Autumn's here! Go say hi to her."]), { quietIfRecent: true }); return;
     case "floor": if (info && info.point) { holdRoutine(120000); world.goToPoint(info.point.x, info.point.z); setStatus("walking over", 2500); } return;
     case "bed": holdRoutine(300000); world.goToSpot("bed"); toast("She flops onto the bed.", { label: "Bedtime", fn: () => openPanel("bedSection") }); return;
     case "nightstand": case "phone": {

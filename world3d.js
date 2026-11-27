@@ -1533,8 +1533,106 @@ export function createWorld(opts) {
   function setPose(name, ms) {
     if (!name) { poseOverride = null; poseOverrideUntil = 0; return; }
     poseOverride = name; poseOverrideUntil = Date.now() + (ms || 9000);
+    // 2.4.13: the warm poses are shared — when Aimmianna hugs or hearts,
+    // Autumn does it with her, so she feels present, not parked.
+    if (name === "hug") guestEmote("hug");
+    else if (name === "heart") guestEmote("heart_pose");
   }
   avatar.object3d.position.copy(her.pos);
+
+  /* ------------ Autumn — the first guest avatar (2.4.13) -------------
+     She lives in the SHARED apartment only — never in Tony's private
+     Game Mode (guests are blocked from it; see app.js). Same loading
+     pattern as Tony's Tripo GLB in life-figures.js: background load,
+     auto-fit, idle + walk + hug + heart_pose clips from her own file.
+     SCALE RULE: her height is 1.7 units, exactly equal to Aimmianna's
+     — never bigger, never better. Her figure was slimmed to her real
+     build (5'6", 115 lbs, petite) as a morph target baked into the
+     GLB; her face and hair are untouched. Her private collection and
+     private memories are NOT wired anywhere here — this is a 3D figure
+     only, and nothing about her private side goes to the shared world. */
+  const GUEST_HEIGHT = 1.7; // SCALE RULE — equals Aimmianna's 1.7 units
+  const GUEST_MODEL = "Autumn_Tripo3d_0_ggkz.glb";
+  class GuestAvatar {
+    constructor() {
+      this.height = GUEST_HEIGHT;
+      this.group = new THREE.Group();
+      this.group.name = "Autumn3D";
+      this.group.visible = false; // shown once the model lands
+      this.model = null; this.mixer = null; this.actions = null;
+      this.motion = null; this.modelFailed = false;
+    }
+    async load() {
+      try {
+        const { GLTFLoader } = await import("./vendor/loaders/GLTFLoader.js");
+        const loader = new GLTFLoader();
+        const gltf = await loader.loadAsync(new URL(`./assets/models/${GUEST_MODEL}`, import.meta.url).href);
+        const { scene: model, animations } = gltf;
+        this.mixer = new THREE.AnimationMixer(model);
+        this.actions = Object.fromEntries(animations.map((clip) => [clip.name, this.mixer.clipAction(clip)]));
+        // The slim_petite morph target is baked with weight 1; pin it on
+        // explicitly so the petite fit can never silently drop off.
+        model.traverse((mesh) => { if (mesh.isSkinnedMesh && mesh.morphTargetInfluences?.length) mesh.morphTargetInfluences[0] = 1; });
+        const bounds = new THREE.Box3().setFromObject(model);
+        const center = bounds.getCenter(new THREE.Vector3());
+        const scale = this.height / (bounds.max.y - bounds.min.y);
+        if (bounds.isEmpty() || !Number.isFinite(scale) || scale <= 0) throw new Error("Invalid guest avatar bounds");
+        model.scale.setScalar(scale);
+        model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+        const facing = new THREE.Group();
+        facing.add(model);
+        this.group.add(facing);
+        model.traverse((mesh) => {
+          if (!mesh.isMesh) return;
+          const material = mesh.material;
+          material.metalness = 0;
+          material.metalnessMap?.dispose(); material.metalnessMap = null;
+          material.roughnessMap = null; material.roughness = 0.88;
+          material.emissiveMap = material.map;
+          material.emissive.set(0xffffff);
+          material.emissiveIntensity = 0.52;
+          if (mesh.isSkinnedMesh) { mesh.computeBoundingSphere(); mesh.boundingSphere.radius *= 1.35; mesh.boundingBox = null; }
+        });
+        tagged(this.group, "guest");
+        this.model = model;
+        this.group.visible = true;
+        this.playMotion("idle");
+        this.mixer.update(0);
+      } catch (error) {
+        this.modelFailed = true;
+        console.warn("Autumn's avatar unavailable; the shared apartment still opens.", error);
+      }
+    }
+    playMotion(name) {
+      if (!this.actions || this.motion === name) return false;
+      const next = this.actions[name];
+      if (!next) return false;
+      const previous = this.actions[this.motion];
+      next.reset().setEffectiveWeight(1).play();
+      if (previous) next.crossFadeFrom(previous, 0.22, false);
+      this.motion = name;
+      return true;
+    }
+    update(dt) { if (this.mixer) this.mixer.update(dt); }
+  }
+  // Autumn's presence in the shared apartment: she stands beside
+  // Aimmianna and walks with her when the floor is tapped — never static.
+  const guest = {
+    pos: new THREE.Vector3(SPOTS.living_center.x + 0.65, 0, SPOTS.living_center.z + 0.35),
+    heading: 0, moving: false, emoteLeft: 0, heartPending: false,
+  };
+  const guestTmp = new THREE.Vector3();
+  const guestAvatar = new GuestAvatar();
+  scene.add(guestAvatar.group);
+  guestAvatar.group.position.copy(guest.pos);
+  guestAvatar.load(); // background — never blocks the apartment opening
+  function guestEmote(name) {
+    if (!guestAvatar.actions) return false;
+    if (!guestAvatar.playMotion(name)) return false;
+    guest.emoteLeft = guestAvatar.actions[name].getClip().duration;
+    guest.heartPending = name === "hug"; // a hug ends with heart hands
+    return true;
+  }
 
   // The private game's figures are attached only while it is being played.
   let life = null, lifePath = [], lifeHeading = 0, lifeArrive = null, lifeView = null;
@@ -1850,6 +1948,44 @@ export function createWorld(opts) {
     const lit = LAMP_MODES[lamp.mode].i ? 1 : 0.72;
     avatar.update(dt, t, camera, { mode, moveDir: her.moveDir, heading: her.heading, brightness: lit });
 
+    // Autumn follows Aimmianna (2.4.13): she walks beside her and idles
+    // facing her, so she feels present in the shared apartment, not static.
+    if (guestAvatar.model && guestAvatar.group.visible) {
+      const sideX = Math.cos(her.heading), sideZ = -Math.sin(her.heading);
+      guestTmp.set(her.pos.x + sideX * 0.55, 0, her.pos.z + sideZ * 0.55);
+      tmp.subVectors(guestTmp, guest.pos); tmp.y = 0;
+      const gd = tmp.length();
+      if (gd > 3) { guest.pos.copy(guestTmp); guest.moving = false; } // first placement or a teleport: snap beside her
+      else if (gd > 0.08) {
+        if (gd > 0.001) guest.heading = Math.atan2(tmp.x, tmp.z);
+        const gstep = her.speed * dt;
+        if (gd <= gstep) guest.pos.copy(guestTmp);
+        else { tmp.multiplyScalar(gstep / gd); guest.pos.add(tmp); }
+        guest.moving = true;
+      } else guest.moving = false;
+      // A walk cancels an emote — she never glides through a hug.
+      if (guest.moving) { guest.emoteLeft = 0; guest.heartPending = false; }
+      // Emote timing: a hug ends with heart hands; any emote falls back
+      // to walk or idle when its clip runs out.
+      if (guest.emoteLeft > 0) {
+        guest.emoteLeft -= dt;
+        if (guest.emoteLeft <= 0) {
+          if (guest.heartPending) { guest.heartPending = false; guestEmote("heart_pose"); }
+          else guestAvatar.playMotion(guest.moving ? "walk" : "idle");
+        }
+      } else {
+        guestAvatar.playMotion(guest.moving ? "walk" : "idle");
+      }
+      // Face where she's going; when still, face Aimmianna.
+      const wantYaw = guest.moving || guest.emoteLeft > 0
+        ? guest.heading
+        : Math.atan2(her.pos.x - guest.pos.x, her.pos.z - guest.pos.z);
+      const dyaw = Math.atan2(Math.sin(wantYaw - guestAvatar.group.rotation.y), Math.cos(wantYaw - guestAvatar.group.rotation.y));
+      guestAvatar.group.rotation.y += dyaw * (1 - Math.exp(-dt * 9));
+      guestAvatar.group.position.copy(guest.pos);
+      guestAvatar.update(dt);
+    }
+
     // koi drift around the pond
     for (const k of koi) {
       const a = t * k.speed + k.phase;
@@ -2005,6 +2141,11 @@ export function createWorld(opts) {
     goToSpot, goToPoint, goToRoom, placeAt,
     getHer: () => ({ room: roomAt(her.pos.x, her.pos.z), spot: her.spot, walking: her.path.length > 0, pose: her.pose, mode: her.mode || "idle", poseOverride: poseOverride && Date.now() < poseOverrideUntil ? poseOverride : null }),
     setPose, clearPose: () => setPose(null),
+    // Autumn, the first guest avatar (2.4.13): lives in the shared
+    // apartment only. guestEmote plays one of her clips (hug, heart_pose,
+    // greet_02, wave_goodbye_02, ...); getGuest reports her live state.
+    guestEmote,
+    getGuest: () => ({ ready: !!guestAvatar.model, failed: guestAvatar.modelFailed, mode: guestAvatar.motion || null, moving: guest.moving, pos: { x: +guest.pos.x.toFixed(2), z: +guest.pos.z.toFixed(2) } }),
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
     setFollow, setRoomView,
