@@ -1535,8 +1535,9 @@ export function createWorld(opts) {
     poseOverride = name; poseOverrideUntil = Date.now() + (ms || 9000);
     // 2.4.13: the warm poses are shared — when Aimmianna hugs or hearts,
     // Autumn does it with her, so she feels present, not parked.
-    if (name === "hug") guestEmote("hug");
-    else if (name === "heart") guestEmote("heart_pose");
+    // 2.4.14: Summer joins the warm poses too.
+    if (name === "hug") { guestEmote("hug"); summerEmote("hug"); }
+    else if (name === "heart") { guestEmote("heart_pose"); summerEmote("heart_pose"); }
   }
   avatar.object3d.position.copy(her.pos);
 
@@ -1545,19 +1546,53 @@ export function createWorld(opts) {
      Game Mode (guests are blocked from it; see app.js). Same loading
      pattern as Tony's Tripo GLB in life-figures.js: background load,
      auto-fit, idle + walk + hug + heart_pose clips from her own file.
+     Her file ships as 4 chunks (.part0..3) through the Contents API —
+     the chunked loader glues them back together before parsing, so the
+     single 64 MB file is never uploaded.
      SCALE RULE: her height is 1.7 units, exactly equal to Aimmianna's
      — never bigger, never better. Her figure was slimmed to her real
      build (5'6", 115 lbs, petite) as a morph target baked into the
      GLB; her face and hair are untouched. Her private collection and
      private memories are NOT wired anywhere here — this is a 3D figure
      only, and nothing about her private side goes to the shared world. */
-  const GUEST_HEIGHT = 1.7; // SCALE RULE — equals Aimmianna's 1.7 units
+  const GUEST_HEIGHT = 1.7; // SCALE RULE — Autumn equals Aimmianna's 1.7 units
   const GUEST_MODEL = "Autumn_Tripo3d_0_ggkz.glb";
+  const GUEST_PARTS = 4; // chunked upload: .part0..3, 16,048,506 bytes each
+  // Summer (2.4.14) stands LEVEL with Aimmianna: 1.78 units, never bigger.
+  const SUMMER_HEIGHT = 1.78;
+  const SUMMER_MODEL = "Summer_0_cy1n.glb";
+  const SUMMER_PARTS = 4; // chunked upload: .part0..3, 15,087,325 bytes each
+  /* Chunked GLB loader (2.4.14 patch) — the git push to github.com is
+     blocked, so big models ship as ~16 MB pieces through the Contents
+     API instead of one file. Fetch the parts in order, glue the bytes
+     back together, and parse the reassembled buffer exactly as if it
+     were the single file. A failed part throws, and the caller's
+     try/catch leaves the shared apartment open with the guest simply
+     absent — the same graceful failure as a missing file. */
+  async function loadChunkedGlb(loader, modelFile, partCount) {
+    const base = new URL(`./assets/models/${modelFile}`, import.meta.url).href;
+    const buffers = [];
+    let total = 0;
+    for (let i = 0; i < partCount; i++) {
+      const res = await fetch(`${base}.part${i}`);
+      if (!res.ok) throw new Error(`Guest model part ${i} of ${modelFile} failed: HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      buffers.push(buf);
+      total += buf.byteLength;
+    }
+    const combined = new Uint8Array(total);
+    let offset = 0;
+    for (const buf of buffers) { combined.set(new Uint8Array(buf), offset); offset += buf.byteLength; }
+    return new Promise((resolve, reject) => loader.parse(combined.buffer, base, resolve, reject));
+  }
   class GuestAvatar {
-    constructor() {
-      this.height = GUEST_HEIGHT;
+    constructor(modelFile, partCount, height, groupName, tapTag) {
+      this.modelFile = modelFile;
+      this.partCount = partCount;
+      this.height = height;
       this.group = new THREE.Group();
-      this.group.name = "Autumn3D";
+      this.group.name = groupName;
+      this.tapTag = tapTag;
       this.group.visible = false; // shown once the model lands
       this.model = null; this.mixer = null; this.actions = null;
       this.motion = null; this.modelFailed = false;
@@ -1566,7 +1601,7 @@ export function createWorld(opts) {
       try {
         const { GLTFLoader } = await import("./vendor/loaders/GLTFLoader.js");
         const loader = new GLTFLoader();
-        const gltf = await loader.loadAsync(new URL(`./assets/models/${GUEST_MODEL}`, import.meta.url).href);
+        const gltf = await loadChunkedGlb(loader, this.modelFile, this.partCount);
         const { scene: model, animations } = gltf;
         this.mixer = new THREE.AnimationMixer(model);
         this.actions = Object.fromEntries(animations.map((clip) => [clip.name, this.mixer.clipAction(clip)]));
@@ -1593,21 +1628,28 @@ export function createWorld(opts) {
           material.emissiveIntensity = 0.52;
           if (mesh.isSkinnedMesh) { mesh.computeBoundingSphere(); mesh.boundingSphere.radius *= 1.35; mesh.boundingBox = null; }
         });
-        tagged(this.group, "guest");
+        tagged(this.group, this.tapTag);
         this.model = model;
         this.group.visible = true;
         this.playMotion("idle");
         this.mixer.update(0);
       } catch (error) {
         this.modelFailed = true;
-        console.warn("Autumn's avatar unavailable; the shared apartment still opens.", error);
+        console.warn(this.group.name + " avatar unavailable; the shared apartment still opens.", error);
       }
     }
     playMotion(name) {
       if (!this.actions || this.motion === name) return false;
       const next = this.actions[name];
-      if (!next) return false;
       const previous = this.actions[this.motion];
+      if (!next) {
+        // No such clip in this file (Summer has no idle clip): stop the
+        // old one and rest in a procedural idle instead of freezing
+        // mid-walk with the walk clip still playing.
+        if (previous) previous.fadeOut(0.22);
+        this.motion = name;
+        return true;
+      }
       next.reset().setEffectiveWeight(1).play();
       if (previous) next.crossFadeFrom(previous, 0.22, false);
       this.motion = name;
@@ -1622,7 +1664,7 @@ export function createWorld(opts) {
     heading: 0, moving: false, emoteLeft: 0, heartPending: false,
   };
   const guestTmp = new THREE.Vector3();
-  const guestAvatar = new GuestAvatar();
+  const guestAvatar = new GuestAvatar(GUEST_MODEL, GUEST_PARTS, GUEST_HEIGHT, "Autumn3D", "guest");
   scene.add(guestAvatar.group);
   guestAvatar.group.position.copy(guest.pos);
   guestAvatar.load(); // background — never blocks the apartment opening
@@ -1631,6 +1673,119 @@ export function createWorld(opts) {
     if (!guestAvatar.playMotion(name)) return false;
     guest.emoteLeft = guestAvatar.actions[name].getClip().duration;
     guest.heartPending = name === "hug"; // a hug ends with heart hands
+    return true;
+  }
+
+  /* ------------ Summer — the second guest avatar (2.4.14) ------------
+     She lives in the SHARED apartment only — never in Tony's private
+     Game Mode, never in private memories or collections. Same loading
+     pattern as Autumn. SCALE RULE: she stands LEVEL with Aimmianna at
+     1.78 units — never bigger. Her figure was slimmed to her real build
+     (5'5", 120 lbs, petite) as a morph target baked into the GLB; her
+     face and hair are untouched. Her file has NO idle clip, so her idle
+     is a procedural breathing bob in the follow loop below — never
+     frozen. She waves hello with greet_04 when tapped. */
+  const summer = {
+    pos: new THREE.Vector3(SPOTS.living_center.x - 0.65, 0, SPOTS.living_center.z + 0.35),
+    heading: 0, moving: false, emoteLeft: 0, heartPending: false,
+  };
+  const summerTmp = new THREE.Vector3();
+  const summerAvatar = new GuestAvatar(SUMMER_MODEL, SUMMER_PARTS, SUMMER_HEIGHT, "Summer3D", "guestSummer");
+  scene.add(summerAvatar.group);
+  summerAvatar.group.position.copy(summer.pos);
+  summerAvatar.load(); // background — never blocks the apartment opening
+  function summerEmote(name) {
+    if (!summerAvatar.actions) return false;
+    if (!summerAvatar.playMotion(name)) return false;
+    summer.emoteLeft = summerAvatar.actions[name].getClip().duration;
+    summer.heartPending = name === "hug"; // a hug ends with heart hands
+    return true;
+  }
+  // A soft glow disc under her feet, coloured by her current outfit —
+  // the visible part of her wardrobe (see below).
+  const summerAura = new THREE.Mesh(
+    new THREE.CircleGeometry(0.5, 32),
+    new THREE.MeshBasicMaterial({ color: 0x8a0f2e, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  summerAura.rotation.x = -Math.PI / 2;
+  summerAura.position.y = 0.02;
+  summerAvatar.group.add(summerAura);
+
+  /* ------------ Summer's wardrobe (2.4.14): high-class goth emo
+     princess — she is a barbie doll, a princess, not a casual t-shirt
+     girl. Heavy on stock from the start: outfits, shoes, makeup,
+     hairstyles and hair dye. Her Tripo model is one mesh / one
+     material, so outfits cannot swap per-region the way Aimmianna's
+     multi-piece wardrobe does — an outfit pick sets a subtle colour
+     cast on her figure plus the matching aura glow under her feet, and
+     the pick is saved and shown in her wardrobe panel. Hair dye shifts
+     the cast toward the dye colour. Makeup, shoes and hairstyle picks
+     are recorded and shown; they need a multi-mesh model to change on
+     the figure itself. The full beauty salon (nails, tan, sauna, salon
+     rooms) is queued for a later wardrobe expansion, not this version. */
+  const SUMMER_WARDROBE = {
+    outfit: [
+      { id: "midnight_velvet", label: "Midnight Velvet Gown", desc: "Black velvet, blood-red corset lacing", accent: 0x8a0f2e, tint: [1, 0.97, 0.98] },
+      { id: "crimson_princess", label: "Crimson Princess Gown", desc: "Deep crimson silk, black lace trim", accent: 0xc01535, tint: [1, 0.94, 0.94] },
+      { id: "lilac_moonlight", label: "Lilac Moonlight Gown", desc: "Pale lilac chiffon, silver moon beads", accent: 0xb9a7e8, tint: [0.97, 0.96, 1] },
+      { id: "onyx_ballgown", label: "Onyx Ballgown", desc: "Black satin, silver chains, sheer sleeves", accent: 0x9aa0b5, tint: [0.96, 0.97, 1] },
+      { id: "rose_thorn", label: "Rose Thorn Gown", desc: "Dark rose velvet, thorn embroidery", accent: 0xd13a6e, tint: [1, 0.95, 0.97] },
+      { id: "starlight_goth", label: "Starlight Gothic Gown", desc: "Midnight blue, star sequins, sheer cape", accent: 0x4a6fd6, tint: [0.95, 0.97, 1] },
+    ],
+    shoes: [
+      { id: "mary_janes", label: "Platform Mary Janes", desc: "Black patent, chunky platform", accent: 0x222222 },
+      { id: "lace_boots", label: "Knee-High Lace Boots", desc: "Black lace-up, stacked heel", accent: 0x1a1a1a },
+      { id: "velvet_flats", label: "Velvet Ballet Flats", desc: "Burgundy velvet, ribbon ties", accent: 0x7a1030 },
+      { id: "chunky_boots", label: "Chunky Goth Boots", desc: "Black leather, silver buckles", accent: 0x333333 },
+      { id: "crystal_heels", label: "Crystal Heels", desc: "Clear heel, silver glitter", accent: 0xd8d8e8 },
+    ],
+    makeup: [
+      { id: "smoky_doll", label: "Smoky Doll Eyes", desc: "Smoky shadow, long lashes, soft pink lips", accent: 0x6b4a5a },
+      { id: "blood_lips", label: "Blood-Red Lips", desc: "Deep red lips, winged liner", accent: 0xa01028 },
+      { id: "princess_blush", label: "Soft Princess Blush", desc: "Rosy cheeks, glossy nude lips", accent: 0xe8a0b0 },
+      { id: "moonlight_silver", label: "Silver Moonlight", desc: "Silver shimmer eyes, pale lips", accent: 0xc8c8d8 },
+      { id: "classic_goth", label: "Classic Goth", desc: "Dark lips, sharp winged liner", accent: 0x2a2a2a },
+    ],
+    hair: [
+      { id: "loose_waves", label: "Loose Waves", desc: "Soft waves past her shoulders", accent: 0x8a5a3a },
+      { id: "high_pony", label: "High Ponytail", desc: "Sleek high pony, face-framing strands", accent: 0x8a5a3a },
+      { id: "twin_braids", label: "Twin Braids", desc: "Two long braids, black ribbons", accent: 0x8a5a3a },
+      { id: "sleek_straight", label: "Sleek Straight", desc: "Pin-straight, centre part", accent: 0x8a5a3a },
+      { id: "princess_curls", label: "Princess Curls", desc: "Big soft curls, tiara-ready", accent: 0x8a5a3a },
+      { id: "crown_braid", label: "Half-Up Crown Braid", desc: "Braided crown, loose waves below", accent: 0x8a5a3a },
+    ],
+    dye: [
+      { id: "crimson_ends", label: "Crimson Ends", desc: "Dark hair, red ends — her look", accent: 0xc01535, tint: [1, 0.92, 0.92] },
+      { id: "jet_black", label: "Jet Black", desc: "Glossy black, all over", accent: 0x1a1a1a, tint: [0.97, 0.97, 0.98] },
+      { id: "midnight_purple", label: "Midnight Purple", desc: "Black with a deep purple sheen", accent: 0x6a2a8a, tint: [0.97, 0.94, 1] },
+      { id: "rose_pink", label: "Rose Pink", desc: "Soft rose pink, all over", accent: 0xe88aa8, tint: [1, 0.94, 0.97] },
+      { id: "silver_blonde", label: "Silver Blonde", desc: "Icy silver blonde", accent: 0xd8d8e8, tint: [0.98, 0.98, 1] },
+      { id: "deep_burgundy", label: "Deep Burgundy", desc: "Rich burgundy, all over", accent: 0x7a1030, tint: [1, 0.93, 0.95] },
+    ],
+  };
+  const SUMMER_WARDROBE_DEFAULT = { outfit: "midnight_velvet", shoes: "mary_janes", makeup: "smoky_doll", hair: "loose_waves", dye: "crimson_ends" };
+  const summerWardrobe = { ...SUMMER_WARDROBE_DEFAULT };
+  let summerWardrobeApplied = false;
+  function applySummerWardrobe() {
+    const outfit = SUMMER_WARDROBE.outfit.find((o) => o.id === summerWardrobe.outfit) || SUMMER_WARDROBE.outfit[0];
+    const dye = SUMMER_WARDROBE.dye.find((o) => o.id === summerWardrobe.dye) || SUMMER_WARDROBE.dye[0];
+    if (summerAvatar.model) {
+      // subtle cast only — a strong tint would recolour her skin too
+      summerAvatar.model.traverse((mesh) => {
+        if (!mesh.isMesh) return;
+        mesh.material.color.setRGB(
+          Math.min(1, outfit.tint[0] * dye.tint[0]),
+          Math.min(1, outfit.tint[1] * dye.tint[1]),
+          Math.min(1, outfit.tint[2] * dye.tint[2]));
+      });
+    }
+    summerAura.material.color.setHex(outfit.accent);
+  }
+  function setSummerWardrobe(kind, id) {
+    const list = SUMMER_WARDROBE[kind];
+    if (!list || !list.some((o) => o.id === id)) return false;
+    summerWardrobe[kind] = id;
+    applySummerWardrobe();
     return true;
   }
 
@@ -1986,6 +2141,50 @@ export function createWorld(opts) {
       guestAvatar.update(dt);
     }
 
+    // Summer follows Aimmianna too (2.4.14), on the opposite side from
+    // Autumn, at the same height as Aimmianna. She has no idle clip, so
+    // her idle is a procedural breathing bob — never frozen.
+    if (summerAvatar.model && summerAvatar.group.visible) {
+      if (!summerWardrobeApplied) { summerWardrobeApplied = true; applySummerWardrobe(); }
+      const sSideX = -Math.cos(her.heading), sSideZ = Math.sin(her.heading);
+      summerTmp.set(her.pos.x + sSideX * 0.55, 0, her.pos.z + sSideZ * 0.55);
+      tmp.subVectors(summerTmp, summer.pos); tmp.y = 0;
+      const sd = tmp.length();
+      if (sd > 3) { summer.pos.copy(summerTmp); summer.moving = false; } // first placement or a teleport: snap beside her
+      else if (sd > 0.08) {
+        if (sd > 0.001) summer.heading = Math.atan2(tmp.x, tmp.z);
+        const sstep = her.speed * dt;
+        if (sd <= sstep) summer.pos.copy(summerTmp);
+        else { tmp.multiplyScalar(sstep / sd); summer.pos.add(tmp); }
+        summer.moving = true;
+      } else summer.moving = false;
+      // A walk cancels an emote — she never glides through a hug.
+      if (summer.moving) { summer.emoteLeft = 0; summer.heartPending = false; }
+      // Emote timing: a hug ends with heart hands; any emote falls back
+      // to walk or idle when its clip runs out.
+      if (summer.emoteLeft > 0) {
+        summer.emoteLeft -= dt;
+        if (summer.emoteLeft <= 0) {
+          if (summer.heartPending) { summer.heartPending = false; summerEmote("heart_pose"); }
+          else summerAvatar.playMotion(summer.moving ? "walk" : "idle");
+        }
+      } else {
+        summerAvatar.playMotion(summer.moving ? "walk" : "idle");
+      }
+      // Face where she's going; when still, face Aimmianna.
+      const sWantYaw = summer.moving || summer.emoteLeft > 0
+        ? summer.heading
+        : Math.atan2(her.pos.x - summer.pos.x, her.pos.z - summer.pos.z);
+      const sDyaw = Math.atan2(Math.sin(sWantYaw - summerAvatar.group.rotation.y), Math.cos(sWantYaw - summerAvatar.group.rotation.y));
+      summerAvatar.group.rotation.y += sDyaw * (1 - Math.exp(-dt * 9));
+      // Procedural breathing idle: a gentle rise and fall while she
+      // stands still with no clip playing. No bob while walking or
+      // emoting — the clip owns the motion then.
+      const sBreathing = !summer.moving && summer.emoteLeft <= 0;
+      summerAvatar.group.position.set(summer.pos.x, sBreathing ? 0.012 * Math.sin(t * 1.4) : 0, summer.pos.z);
+      summerAvatar.update(dt);
+    }
+
     // koi drift around the pond
     for (const k of koi) {
       const a = t * k.speed + k.phase;
@@ -2146,6 +2345,16 @@ export function createWorld(opts) {
     // greet_02, wave_goodbye_02, ...); getGuest reports her live state.
     guestEmote,
     getGuest: () => ({ ready: !!guestAvatar.model, failed: guestAvatar.modelFailed, mode: guestAvatar.motion || null, moving: guest.moving, pos: { x: +guest.pos.x.toFixed(2), z: +guest.pos.z.toFixed(2) } }),
+    // Summer, the second guest avatar (2.4.14): same shared-side-only
+    // rules as Autumn, standing level with Aimmianna (1.78 units).
+    // Her idle is procedural (no idle clip in her file); greet_04 is
+    // her hello wave. setSummerWardrobe / getSummerWardrobe run her
+    // goth emo princess wardrobe — outfits, shoes, makeup, hairstyles,
+    // hair dye — shared side only, no private wiring of any kind.
+    summerEmote,
+    getSummer: () => ({ ready: !!summerAvatar.model, failed: summerAvatar.modelFailed, mode: summerAvatar.motion || null, moving: summer.moving, pos: { x: +summer.pos.x.toFixed(2), z: +summer.pos.z.toFixed(2) } }),
+    setSummerWardrobe,
+    getSummerWardrobe: () => ({ picks: { ...summerWardrobe }, catalogue: SUMMER_WARDROBE }),
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
     setFollow, setRoomView,
