@@ -10,6 +10,55 @@
 import * as THREE from "./vendor/three.module.min.js";
 import { OUTFIT_3D, hasOutfit3D, buildOutfitTexture, buildGarments, buildWeapon, hasWeapon3D } from "./outfits3d.js";
 
+/* Summer's wardrobe catalogue (2.4.14, moved to module scope in 2.4.19):
+   high-class goth emo princess — 6 gowns, 5 shoes, 5 makeup, 6 hairstyles,
+   6 hair dyes. Exported so the wardrobe panel (app.js) can render the
+   lists even when the 3D world has not booted — a failed or slow world
+   load used to leave her panel silently empty. The per-world picks and
+   the apply function stay inside createWorld. */
+export const SUMMER_WARDROBE = {
+  outfit: [
+    { id: "midnight_velvet", label: "Midnight Velvet Gown", desc: "Black velvet, blood-red corset lacing", accent: 0x8a0f2e, tint: [1, 0.97, 0.98] },
+    { id: "crimson_princess", label: "Crimson Princess Gown", desc: "Deep crimson silk, black lace trim", accent: 0xc01535, tint: [1, 0.94, 0.94] },
+    { id: "lilac_moonlight", label: "Lilac Moonlight Gown", desc: "Pale lilac chiffon, silver moon beads", accent: 0xb9a7e8, tint: [0.97, 0.96, 1] },
+    { id: "onyx_ballgown", label: "Onyx Ballgown", desc: "Black satin, silver chains, sheer sleeves", accent: 0x9aa0b5, tint: [0.96, 0.97, 1] },
+    { id: "rose_thorn", label: "Rose Thorn Gown", desc: "Dark rose velvet, thorn embroidery", accent: 0xd13a6e, tint: [1, 0.95, 0.97] },
+    { id: "starlight_goth", label: "Starlight Gothic Gown", desc: "Midnight blue, star sequins, sheer cape", accent: 0x4a6fd6, tint: [0.95, 0.97, 1] },
+  ],
+  shoes: [
+    { id: "mary_janes", label: "Platform Mary Janes", desc: "Black patent, chunky platform", accent: 0x222222 },
+    { id: "lace_boots", label: "Knee-High Lace Boots", desc: "Black lace-up, stacked heel", accent: 0x1a1a1a },
+    { id: "velvet_flats", label: "Velvet Ballet Flats", desc: "Burgundy velvet, ribbon ties", accent: 0x7a1030 },
+    { id: "chunky_boots", label: "Chunky Goth Boots", desc: "Black leather, silver buckles", accent: 0x333333 },
+    { id: "crystal_heels", label: "Crystal Heels", desc: "Clear heel, silver glitter", accent: 0xd8d8e8 },
+  ],
+  makeup: [
+    { id: "smoky_doll", label: "Smoky Doll Eyes", desc: "Smoky shadow, long lashes, soft pink lips", accent: 0x6b4a5a },
+    { id: "blood_lips", label: "Blood-Red Lips", desc: "Deep red lips, winged liner", accent: 0xa01028 },
+    { id: "princess_blush", label: "Soft Princess Blush", desc: "Rosy cheeks, glossy nude lips", accent: 0xe8a0b0 },
+    { id: "moonlight_silver", label: "Silver Moonlight", desc: "Silver shimmer eyes, pale lips", accent: 0xc8c8d8 },
+    { id: "classic_goth", label: "Classic Goth", desc: "Dark lips, sharp winged liner", accent: 0x2a2a2a },
+  ],
+  hair: [
+    { id: "loose_waves", label: "Loose Waves", desc: "Soft waves past her shoulders", accent: 0x8a5a3a },
+    { id: "high_pony", label: "High Ponytail", desc: "Sleek high pony, face-framing strands", accent: 0x8a5a3a },
+    { id: "twin_braids", label: "Twin Braids", desc: "Two long braids, black ribbons", accent: 0x8a5a3a },
+    { id: "sleek_straight", label: "Sleek Straight", desc: "Pin-straight, centre part", accent: 0x8a5a3a },
+    { id: "princess_curls", label: "Princess Curls", desc: "Big soft curls, tiara-ready", accent: 0x8a5a3a },
+    { id: "crown_braid", label: "Half-Up Crown Braid", desc: "Braided crown, loose waves below", accent: 0x8a5a3a },
+  ],
+  dye: [
+    { id: "crimson_ends", label: "Crimson Ends", desc: "Dark hair, red ends — her look", accent: 0xc01535, tint: [1, 0.92, 0.92] },
+    { id: "jet_black", label: "Jet Black", desc: "Glossy black, all over", accent: 0x1a1a1a, tint: [0.97, 0.97, 0.98] },
+    { id: "midnight_purple", label: "Midnight Purple", desc: "Black with a deep purple sheen", accent: 0x6a2a8a, tint: [0.97, 0.94, 1] },
+    { id: "rose_pink", label: "Rose Pink", desc: "Soft rose pink, all over", accent: 0xe88aa8, tint: [1, 0.94, 0.97] },
+    { id: "silver_blonde", label: "Silver Blonde", desc: "Icy silver blonde", accent: 0xd8d8e8, tint: [0.98, 0.98, 1] },
+    { id: "deep_burgundy", label: "Deep Burgundy", desc: "Rich burgundy, all over", accent: 0x7a1030, tint: [1, 0.93, 0.95] },
+  ],
+};
+export const SUMMER_WARDROBE_DEFAULT = { outfit: "midnight_velvet", shoes: "mary_janes", makeup: "smoky_doll", hair: "loose_waves", dye: "crimson_ends" };
+
+
 /* ------------------------------------------------------------------ layout */
 export const ROOMS = {
   bedroom:  { id: "bedroom",  label: "Bedroom",     x0: -14, x1: -6 },
@@ -1812,6 +1861,28 @@ export function createWorld(opts) {
   summerAura.position.y = 0.02;
   summerAvatar.group.add(summerAura);
 
+  // Aura circles for everyone (2.4.19): Summer already had one — now
+  // Aimmianna, Autumn and Tony get the same disc in the same style
+  // (CircleGeometry 0.5, additive glow, opacity 0.22, 0.02 above the
+  // floor, always on, a child of each figure's group so it follows
+  // them). Summer's follows her outfit pick's accent (see
+  // applySummerWardrobe); the others use a fixed signature colour —
+  // Tony's shared slot has no wardrobe and Autumn has none yet, and
+  // Aimmianna's outfits carry no accent field.
+  function makeAuraDisc(color) {
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.5, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 0.02;
+    return disc;
+  }
+  const aimmiannaAura = makeAuraDisc(0x8a0f2e); // her deep crimson
+  avatar.object3d.add(aimmiannaAura);
+  const autumnAura = makeAuraDisc(0x8a4fbf); // lilac purple
+  guestAvatar.group.add(autumnAura);
+
   /* ------------ Tony — his own figure in the shared apartment (2.4.15) --
      Tony asked for his figure in BOTH places: his private Game Mode figure
      (life-figures.js, the older Tony_0_vvq4.glb) stays exactly as it is —
@@ -1841,6 +1912,8 @@ export function createWorld(opts) {
   scene.add(tonyAvatar.group);
   tonyAvatar.group.position.copy(tony.pos);
   tonyAvatar.load(); // background — never blocks the apartment opening
+  const tonyAura = makeAuraDisc(0xbf3a1e); // ember red — same style as Summer's, always on
+  tonyAvatar.group.add(tonyAura);
   function tonyEmote(name) {
     if (!tonyAvatar.actions) return false;
     if (!tonyAvatar.playMotion(name)) return false;
@@ -1861,47 +1934,7 @@ export function createWorld(opts) {
      are recorded and shown; they need a multi-mesh model to change on
      the figure itself. The full beauty salon (nails, tan, sauna, salon
      rooms) is queued for a later wardrobe expansion, not this version. */
-  const SUMMER_WARDROBE = {
-    outfit: [
-      { id: "midnight_velvet", label: "Midnight Velvet Gown", desc: "Black velvet, blood-red corset lacing", accent: 0x8a0f2e, tint: [1, 0.97, 0.98] },
-      { id: "crimson_princess", label: "Crimson Princess Gown", desc: "Deep crimson silk, black lace trim", accent: 0xc01535, tint: [1, 0.94, 0.94] },
-      { id: "lilac_moonlight", label: "Lilac Moonlight Gown", desc: "Pale lilac chiffon, silver moon beads", accent: 0xb9a7e8, tint: [0.97, 0.96, 1] },
-      { id: "onyx_ballgown", label: "Onyx Ballgown", desc: "Black satin, silver chains, sheer sleeves", accent: 0x9aa0b5, tint: [0.96, 0.97, 1] },
-      { id: "rose_thorn", label: "Rose Thorn Gown", desc: "Dark rose velvet, thorn embroidery", accent: 0xd13a6e, tint: [1, 0.95, 0.97] },
-      { id: "starlight_goth", label: "Starlight Gothic Gown", desc: "Midnight blue, star sequins, sheer cape", accent: 0x4a6fd6, tint: [0.95, 0.97, 1] },
-    ],
-    shoes: [
-      { id: "mary_janes", label: "Platform Mary Janes", desc: "Black patent, chunky platform", accent: 0x222222 },
-      { id: "lace_boots", label: "Knee-High Lace Boots", desc: "Black lace-up, stacked heel", accent: 0x1a1a1a },
-      { id: "velvet_flats", label: "Velvet Ballet Flats", desc: "Burgundy velvet, ribbon ties", accent: 0x7a1030 },
-      { id: "chunky_boots", label: "Chunky Goth Boots", desc: "Black leather, silver buckles", accent: 0x333333 },
-      { id: "crystal_heels", label: "Crystal Heels", desc: "Clear heel, silver glitter", accent: 0xd8d8e8 },
-    ],
-    makeup: [
-      { id: "smoky_doll", label: "Smoky Doll Eyes", desc: "Smoky shadow, long lashes, soft pink lips", accent: 0x6b4a5a },
-      { id: "blood_lips", label: "Blood-Red Lips", desc: "Deep red lips, winged liner", accent: 0xa01028 },
-      { id: "princess_blush", label: "Soft Princess Blush", desc: "Rosy cheeks, glossy nude lips", accent: 0xe8a0b0 },
-      { id: "moonlight_silver", label: "Silver Moonlight", desc: "Silver shimmer eyes, pale lips", accent: 0xc8c8d8 },
-      { id: "classic_goth", label: "Classic Goth", desc: "Dark lips, sharp winged liner", accent: 0x2a2a2a },
-    ],
-    hair: [
-      { id: "loose_waves", label: "Loose Waves", desc: "Soft waves past her shoulders", accent: 0x8a5a3a },
-      { id: "high_pony", label: "High Ponytail", desc: "Sleek high pony, face-framing strands", accent: 0x8a5a3a },
-      { id: "twin_braids", label: "Twin Braids", desc: "Two long braids, black ribbons", accent: 0x8a5a3a },
-      { id: "sleek_straight", label: "Sleek Straight", desc: "Pin-straight, centre part", accent: 0x8a5a3a },
-      { id: "princess_curls", label: "Princess Curls", desc: "Big soft curls, tiara-ready", accent: 0x8a5a3a },
-      { id: "crown_braid", label: "Half-Up Crown Braid", desc: "Braided crown, loose waves below", accent: 0x8a5a3a },
-    ],
-    dye: [
-      { id: "crimson_ends", label: "Crimson Ends", desc: "Dark hair, red ends — her look", accent: 0xc01535, tint: [1, 0.92, 0.92] },
-      { id: "jet_black", label: "Jet Black", desc: "Glossy black, all over", accent: 0x1a1a1a, tint: [0.97, 0.97, 0.98] },
-      { id: "midnight_purple", label: "Midnight Purple", desc: "Black with a deep purple sheen", accent: 0x6a2a8a, tint: [0.97, 0.94, 1] },
-      { id: "rose_pink", label: "Rose Pink", desc: "Soft rose pink, all over", accent: 0xe88aa8, tint: [1, 0.94, 0.97] },
-      { id: "silver_blonde", label: "Silver Blonde", desc: "Icy silver blonde", accent: 0xd8d8e8, tint: [0.98, 0.98, 1] },
-      { id: "deep_burgundy", label: "Deep Burgundy", desc: "Rich burgundy, all over", accent: 0x7a1030, tint: [1, 0.93, 0.95] },
-    ],
-  };
-  const SUMMER_WARDROBE_DEFAULT = { outfit: "midnight_velvet", shoes: "mary_janes", makeup: "smoky_doll", hair: "loose_waves", dye: "crimson_ends" };
+  // SUMMER_WARDROBE + SUMMER_WARDROBE_DEFAULT live at module scope now (exported, see top of file).
   const summerWardrobe = { ...SUMMER_WARDROBE_DEFAULT };
   let summerWardrobeApplied = false;
   function applySummerWardrobe() {
@@ -2532,6 +2565,15 @@ export function createWorld(opts) {
     getSummer: () => ({ ready: !!summerAvatar.model, failed: summerAvatar.modelFailed, mode: summerAvatar.motion || null, moving: summer.moving, pos: { x: +summer.pos.x.toFixed(2), z: +summer.pos.z.toFixed(2) } }),
     setSummerWardrobe,
     getSummerWardrobe: () => ({ picks: { ...summerWardrobe }, catalogue: SUMMER_WARDROBE }),
+    // Aura circles (2.4.19): one glow disc under each of the four
+    // shared-apartment figures, always on. Summer's colour follows her
+    // outfit pick; the others are fixed signature colours.
+    getAuraCircles: () => ({
+      aimmianna: { color: aimmiannaAura.material.color.getHex(), visible: aimmiannaAura.visible },
+      autumn: { color: autumnAura.material.color.getHex(), visible: autumnAura.visible },
+      summer: { color: summerAura.material.color.getHex(), visible: summerAura.visible },
+      tony: { color: tonyAura.material.color.getHex(), visible: tonyAura.visible },
+    }),
     // Tony, his own figure in the shared apartment (2.4.15): same
     // shared-side-only rules as the guests, 1.92 units (5'10", tallest of
     // the four in the 2.4.17 balance). His private Game Mode figure (life-figures.js, the
