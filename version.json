@@ -1,10 +1,10 @@
 {
   "version": "2.1.1",
   "build": 211,
-  "webVersion": "2.4.13",
-  "webBuild": 253,
+  "webVersion": "2.4.14",
+  "webBuild": 255,
   "release": "beta",
-  "webNotes": "New in 2.4.13: Autumn joins the shared apartment — her own 3D avatar, built from her Tripo model and slimmed to her real build (5'6\", 115 lbs, petite; face and hair untouched). She stands beside Aimmianna, walks with her when the floor is tapped, hugs and hearts with her on the warm poses, and waves hello when tapped. Same height as Aimmianna — 1.7 units, never bigger. She lives in the shared side only, never in Tony's private Game Mode, and nothing of her private collection or private memories goes anywhere shared. Everything from 2.4.12 still stands: the dedication to Emmi on the front of the app, the five mood poses, two doors two keys, guest codes, the Her World menu, and Rule 1.",
+  "webNotes": "New in 2.4.14: Summer joins the shared apartment \u2014 her own 3D avatar, built from her Tripo model and slimmed to her real build (5'5\", 120 lbs, petite; face and hair untouched). She stands level with Aimmianna \u2014 1.78 units, never bigger. She stands on the opposite side of Aimmianna from Autumn, walks with her when the floor is tapped, hugs and hearts with her on the warm poses, and waves hello (greet_04) when tapped. Her idle is a gentle procedural breathing hold, since her file has no idle clip. Her base wardrobe is in too: high-class goth emo princess \u2014 six gowns, shoes, makeup, hairstyles and hair dye, picked from Summer's Wardrobe in the hub. She lives in the shared side only, never in Tony's private Game Mode, never in private memories. The full beauty salon (nails, tan, sauna, salon rooms) is queued for a later wardrobe expansion. Patch (webBuild 255): both guest models now load from ~16 MB chunks (.part0..3) glued back together in the app, because the single 64 MB files cannot be pushed to the repo \u2014 same models, same look, just shipped in pieces. Everything from 2.4.13 still stands: Autumn's avatar, the dedication to Emmi on the front of the app, the five mood poses, two doors two keys, guest codes, the Her World menu, and Rule 1.",
   "sharedRelease": {
     "revision": 229,
     "text": "Apartment Life and shared companion memory affect both devices. Check for updates on your iPhone and Android."
