@@ -1536,8 +1536,9 @@ export function createWorld(opts) {
     // 2.4.13: the warm poses are shared — when Aimmianna hugs or hearts,
     // Autumn does it with her, so she feels present, not parked.
     // 2.4.14: Summer joins the warm poses too.
-    if (name === "hug") { guestEmote("hug"); summerEmote("hug"); }
-    else if (name === "heart") { guestEmote("heart_pose"); summerEmote("heart_pose"); }
+    // 2.4.15: Tony joins them as well, in his shared slot.
+    if (name === "hug") { guestEmote("hug"); summerEmote("hug"); tonyEmote("hug"); }
+    else if (name === "heart") { guestEmote("heart_pose"); summerEmote("heart_pose"); tonyEmote("heart_pose"); }
   }
   avatar.object3d.position.copy(her.pos);
 
@@ -1585,8 +1586,23 @@ export function createWorld(opts) {
     for (const buf of buffers) { combined.set(new Uint8Array(buf), offset); offset += buf.byteLength; }
     return new Promise((resolve, reject) => loader.parse(combined.buffer, base, resolve, reject));
   }
+  // 2.4.15: Summer's relaxed idle arms. Her GLB has no idle clip, so with
+  // no clip playing she renders in her T-pose bind pose — arms outstretched.
+  // These local-space rotations hang her arms at her sides: upper arms down
+  // with a slight outward splay, forearms down with a slight forward elbow
+  // bend. They were computed from her actual skeleton (bind-pose joint
+  // directions, verified by simulation — see BUILD_NOTE_2.4.15.md): the
+  // simulation lands both hands beside her thighs, just outside them, never
+  // through the torso and never behind her back. Applied POSE_BONES-style
+  // after mixer.update, only while no clip is playing.
+  const SUMMER_IDLE_ARMS = {
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 1.6164 }],
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 1.6635 }],
+    L_Forearm: [{ axis: [-0.153, 0.908, -0.391], angle: 0.3416 }],
+    R_Forearm: [{ axis: [-0.403, -0.875, -0.267], angle: 0.3282 }],
+  };
   class GuestAvatar {
-    constructor(modelFile, partCount, height, groupName, tapTag) {
+    constructor(modelFile, partCount, height, groupName, tapTag, relaxedIdle = false) {
       this.modelFile = modelFile;
       this.partCount = partCount;
       this.height = height;
@@ -1596,6 +1612,12 @@ export function createWorld(opts) {
       this.group.visible = false; // shown once the model lands
       this.model = null; this.mixer = null; this.actions = null;
       this.motion = null; this.modelFailed = false;
+      // 2.4.15: relaxed-idle arms (Summer only — her file has no idle clip).
+      this.relaxedIdle = relaxedIdle;
+      this.idleArmBones = {};
+      this._idleArmWeight = 0;
+      this._idleArmQ = new THREE.Quaternion();
+      this._idleArmAxis = new THREE.Vector3();
     }
     async load() {
       try {
@@ -1630,6 +1652,8 @@ export function createWorld(opts) {
         });
         tagged(this.group, this.tapTag);
         this.model = model;
+        // 2.4.15: resolve the relaxed-idle arm bones (Summer only).
+        if (this.relaxedIdle) for (const name of Object.keys(SUMMER_IDLE_ARMS)) { const b = model.getObjectByName(name); if (b) this.idleArmBones[name] = b; }
         this.group.visible = true;
         this.playMotion("idle");
         this.mixer.update(0);
@@ -1655,7 +1679,34 @@ export function createWorld(opts) {
       this.motion = name;
       return true;
     }
-    update(dt) { if (this.mixer) this.mixer.update(dt); }
+    update(dt) {
+      if (this.mixer) this.mixer.update(dt);
+      this.applyIdleArms(dt);
+    }
+    // 2.4.15: Summer's relaxed idle arms. No clip is playing exactly when
+    // the current motion is the missing "idle" — playMotion("idle") fades
+    // the old clip out and leaves the mixer with nothing to play, so the
+    // skeleton would sit in its T-pose bind pose. This layer hangs her
+    // arms instead. The weight eases toward 1 at idle and toward 0 while
+    // a clip plays (same dt*6 easing as Aimmianna's POSE_BONES layer), so
+    // the arms blend between hanging and the clip with no snap — including
+    // across the 0.22s clip fade-out, where both ease at once.
+    applyIdleArms(dt) {
+      if (!this.relaxedIdle || !this.model) return;
+      const want = this.motion === "idle" ? 1 : 0;
+      this._idleArmWeight += (want - this._idleArmWeight) * Math.min(1, dt * 6);
+      const w = this._idleArmWeight;
+      if (w < 0.02) return;
+      for (const [name, turns] of Object.entries(SUMMER_IDLE_ARMS)) {
+        const bone = this.idleArmBones[name];
+        if (!bone) continue;
+        for (const turn of turns) {
+          this._idleArmAxis.set(turn.axis[0], turn.axis[1], turn.axis[2]).normalize();
+          this._idleArmQ.setFromAxisAngle(this._idleArmAxis, turn.angle * w);
+          bone.quaternion.multiply(this._idleArmQ);
+        }
+      }
+    }
   }
   // Autumn's presence in the shared apartment: she stands beside
   // Aimmianna and walks with her when the floor is tapped — never static.
@@ -1690,7 +1741,7 @@ export function createWorld(opts) {
     heading: 0, moving: false, emoteLeft: 0, heartPending: false,
   };
   const summerTmp = new THREE.Vector3();
-  const summerAvatar = new GuestAvatar(SUMMER_MODEL, SUMMER_PARTS, SUMMER_HEIGHT, "Summer3D", "guestSummer");
+  const summerAvatar = new GuestAvatar(SUMMER_MODEL, SUMMER_PARTS, SUMMER_HEIGHT, "Summer3D", "guestSummer", true); // 2.4.15: relaxed-idle arms — her file has no idle clip
   scene.add(summerAvatar.group);
   summerAvatar.group.position.copy(summer.pos);
   summerAvatar.load(); // background — never blocks the apartment opening
@@ -1710,6 +1761,42 @@ export function createWorld(opts) {
   summerAura.rotation.x = -Math.PI / 2;
   summerAura.position.y = 0.02;
   summerAvatar.group.add(summerAura);
+
+  /* ------------ Tony — his own figure in the shared apartment (2.4.15) --
+     Tony asked for his figure in BOTH places: his private Game Mode figure
+     (life-figures.js, the older Tony_0_vvq4.glb) stays exactly as it is —
+     this is a NEW shared-side slot using his NEWER Tripo export
+     Tony_0_7ymz.glb (9 animations incl. a real idle clip, so no T-pose
+     issue and no procedural idle needed). Slimmed with the same
+     gltf-transform pipeline as the guests (dedup → prune → reorder →
+     quantize → textures 2048; size only — no morph, no proportion change)
+     and shipped as 4 chunks through the chunked loader. SCALE RULE:
+     TONY_HEIGHT = 1.78, EQUAL to Aimmianna, never bigger. He stands in
+     FRONT of her (Autumn and Summer already hold her two sides), walks
+     with her on floor tap, waves hello with greet_01 when tapped, and
+     joins the warm poses. His 2.4.8 hoodie wardrobe lives in
+     life-figures.js (Game Mode only) and does not reach the world API,
+     so this slot wears his default look. Shared side only — no private
+     wiring of any kind. */
+  const TONY_HEIGHT = 1.78; // SCALE RULE — Tony equals Aimmianna, never bigger
+  const TONY_MODEL = "Tony_0_7ymz.glb";
+  const TONY_PARTS = 4; // chunked upload: .part0..3, 13,705,867 bytes each
+  const tony = {
+    pos: new THREE.Vector3(SPOTS.living_center.x, 0, SPOTS.living_center.z + 0.55),
+    heading: 0, moving: false, emoteLeft: 0, heartPending: false,
+  };
+  const tonyTmp = new THREE.Vector3();
+  const tonyAvatar = new GuestAvatar(TONY_MODEL, TONY_PARTS, TONY_HEIGHT, "Tony3D", "guestTony");
+  scene.add(tonyAvatar.group);
+  tonyAvatar.group.position.copy(tony.pos);
+  tonyAvatar.load(); // background — never blocks the apartment opening
+  function tonyEmote(name) {
+    if (!tonyAvatar.actions) return false;
+    if (!tonyAvatar.playMotion(name)) return false;
+    tony.emoteLeft = tonyAvatar.actions[name].getClip().duration;
+    tony.heartPending = name === "hug"; // a hug ends with heart hands
+    return true;
+  }
 
   /* ------------ Summer's wardrobe (2.4.14): high-class goth emo
      princess — she is a barbie doll, a princess, not a casual t-shirt
@@ -2185,6 +2272,45 @@ export function createWorld(opts) {
       summerAvatar.update(dt);
     }
 
+    // Tony follows Aimmianna too (2.4.15), standing in FRONT of her —
+    // Autumn and Summer already hold her two sides. He has a real idle
+    // clip, so no procedural idle is needed here.
+    if (tonyAvatar.model && tonyAvatar.group.visible) {
+      const tFwdX = Math.sin(her.heading), tFwdZ = Math.cos(her.heading);
+      tonyTmp.set(her.pos.x + tFwdX * 0.55, 0, her.pos.z + tFwdZ * 0.55);
+      tmp.subVectors(tonyTmp, tony.pos); tmp.y = 0;
+      const td = tmp.length();
+      if (td > 3) { tony.pos.copy(tonyTmp); tony.moving = false; } // first placement or a teleport: snap in front of her
+      else if (td > 0.08) {
+        if (td > 0.001) tony.heading = Math.atan2(tmp.x, tmp.z);
+        const tstep = her.speed * dt;
+        if (td <= tstep) tony.pos.copy(tonyTmp);
+        else { tmp.multiplyScalar(tstep / td); tony.pos.add(tmp); }
+        tony.moving = true;
+      } else tony.moving = false;
+      // A walk cancels an emote — he never glides through a hug.
+      if (tony.moving) { tony.emoteLeft = 0; tony.heartPending = false; }
+      // Emote timing: a hug ends with heart hands; any emote falls back
+      // to walk or idle when its clip runs out.
+      if (tony.emoteLeft > 0) {
+        tony.emoteLeft -= dt;
+        if (tony.emoteLeft <= 0) {
+          if (tony.heartPending) { tony.heartPending = false; tonyEmote("heart_pose"); }
+          else tonyAvatar.playMotion(tony.moving ? "walk" : "idle");
+        }
+      } else {
+        tonyAvatar.playMotion(tony.moving ? "walk" : "idle");
+      }
+      // Face where he's going; when still, face Aimmianna.
+      const tWantYaw = tony.moving || tony.emoteLeft > 0
+        ? tony.heading
+        : Math.atan2(her.pos.x - tony.pos.x, her.pos.z - tony.pos.z);
+      const tDyaw = Math.atan2(Math.sin(tWantYaw - tonyAvatar.group.rotation.y), Math.cos(tWantYaw - tonyAvatar.group.rotation.y));
+      tonyAvatar.group.rotation.y += tDyaw * (1 - Math.exp(-dt * 9));
+      tonyAvatar.group.position.copy(tony.pos);
+      tonyAvatar.update(dt);
+    }
+
     // koi drift around the pond
     for (const k of koi) {
       const a = t * k.speed + k.phase;
@@ -2355,6 +2481,14 @@ export function createWorld(opts) {
     getSummer: () => ({ ready: !!summerAvatar.model, failed: summerAvatar.modelFailed, mode: summerAvatar.motion || null, moving: summer.moving, pos: { x: +summer.pos.x.toFixed(2), z: +summer.pos.z.toFixed(2) } }),
     setSummerWardrobe,
     getSummerWardrobe: () => ({ picks: { ...summerWardrobe }, catalogue: SUMMER_WARDROBE }),
+    // Tony, his own figure in the shared apartment (2.4.15): same
+    // shared-side-only rules as the guests, standing level with Aimmianna
+    // (1.78 units). His private Game Mode figure (life-figures.js, the
+    // older Tony_0_vvq4.glb) is untouched — this slot is the shared side
+    // only. greet_01 is his hello wave; his file has a real idle clip,
+    // so no procedural idle is needed here.
+    tonyEmote,
+    getTony: () => ({ ready: !!tonyAvatar.model, failed: tonyAvatar.modelFailed, mode: tonyAvatar.motion || null, moving: tony.moving, pos: { x: +tony.pos.x.toFixed(2), z: +tony.pos.z.toFixed(2) } }),
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
     setFollow, setRoomView,
