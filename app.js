@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.17";
+const VERSION = "Aimmianna 3D v2.4.18";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -3462,7 +3462,7 @@ window.__aimmiannaMasterOverride = masterOverride;
    new PIN. */
 function buildWorldBackup() {
   return {
-    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 250,
+    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 259,
     exportedAt: new Date().toISOString(), state: JSON.parse(JSON.stringify(state))
   };
 }
