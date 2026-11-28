@@ -58,6 +58,27 @@ export const SUMMER_WARDROBE = {
 };
 export const SUMMER_WARDROBE_DEFAULT = { outfit: "midnight_velvet", shoes: "mary_janes", makeup: "smoky_doll", hair: "loose_waves", dye: "crimson_ends" };
 
+/* 2.4.20 — smooth continuous follow, one shared step law for all three
+   guests, so the group never rubber-bands. The old law moved each guest
+   at exactly Aimmianna's speed toward a target that itself moves at her
+   speed, so a guest who fell behind (after a turn, or on a slow frame)
+   could never close the gap — it trailed until the distance passed 3 and
+   then SNAPPED beside her: the every-few-steps glitch. The new law moves
+   at her speed times 1.15 at minimum, and proportionally faster the
+   further behind the guest is (gap x 3 per second), so the gap always
+   closes smoothly; only a true teleport (gap > 8) still snaps. Pure
+   numbers, no renderer — the harness unit-tests it directly.
+   Returns { x, z, moving, snapped }. */
+export function followStep(px, pz, tx, tz, dt, baseSpeed) {
+  const dx = tx - px, dz = tz - pz;
+  const d = Math.hypot(dx, dz);
+  if (d > 8) return { x: tx, z: tz, moving: false, snapped: true };
+  if (d <= 0.03) return { x: px, z: pz, moving: false, snapped: false };
+  const step = Math.min(d, Math.max(baseSpeed * 1.15, d * 3) * dt);
+  const k = step / d;
+  return { x: px + dx * k, z: pz + dz * k, moving: true, snapped: false };
+}
+
 
 /* ------------------------------------------------------------------ layout */
 export const ROOMS = {
@@ -66,7 +87,11 @@ export const ROOMS = {
   kitchen:  { id: "kitchen",  label: "Kitchen",     x0: 4,   x1: 10 },
   bathroom: { id: "bathroom", label: "Bathroom",    x0: 10,  x1: 15 },
   ritual:   { id: "ritual",   label: "Ritual Room", x0: 15,  x1: 20.5 },
-  yard:     { id: "yard",     label: "Yard",        x0: 4,   x1: 10 }
+  yard:     { id: "yard",     label: "Yard",        x0: 4,   x1: 10 },
+  // Skate park (2.4.20): a real outdoor place south of the yard, past the
+  // yard fence — concrete, half pipe, bowl, rails, ramps. Same 3D style
+  // as the apartment, part of her world, not a side game.
+  park:     { id: "park",     label: "Skate Park",  x0: 3,   x1: 11 }
 };
 const ROOM_ORDER = ["bedroom", "living", "kitchen", "bathroom", "ritual"];
 const Z_BACK = -4, Z_FRONT = 3.4, WALL_H = 3.4, HALL_Z = 1.9;
@@ -103,7 +128,13 @@ export const SPOTS = {
   altar:          { room: "ritual",   x: 17.75, z: -2.3, pose: "art" },
   ritual_rug:     { room: "ritual",   x: 17.75, z: -0.4, pose: "crossleg" },
   ritual_mirror:  { room: "ritual",   x: 19.4,  z: -2.6 },
-  staff:          { room: "ritual",   x: 15.7,  z: -3.2, pose: "art" }
+  staff:          { room: "ritual",   x: 15.7,  z: -3.2, pose: "art" },
+  // Skate park spots (2.4.20) — the park floor is z 8.2..17, x 3..11.
+  park_center:    { room: "park",     x: 7.0,   z: 12.6 },
+  halfpipe:       { room: "park",     x: 4.6,   z: 15.2 },
+  rail:           { room: "park",     x: 6.0,   z: 13.2 },
+  bowl:           { room: "park",     x: 9.3,   z: 15.0 },
+  ramp:           { room: "park",     x: 9.0,   z: 10.6 }
 };
 export const ROOM_SPOTS = {
   bedroom: ["bedside", "vanity", "nightstand", "bedroom_center", "bed", "window"],
@@ -111,11 +142,15 @@ export const ROOM_SPOTS = {
   kitchen: ["coffee", "fridge", "counter", "kitchen_table", "gate"],
   bathroom: ["sink", "bath_center", "tub"],
   yard: ["yard_center", "pond", "flowers", "bench", "sakura", "hammock", "bamboo"],
-  ritual: ["ritual_center", "altar", "ritual_rug", "ritual_mirror", "staff"]
+  ritual: ["ritual_center", "altar", "ritual_rug", "ritual_mirror", "staff"],
+  park: ["park_center", "halfpipe", "rail", "bowl", "ramp"]
 };
 export function roomAt(x, z) {
+  // The park sits south of the yard fence (z > 8.2, x 3..11) — check it
+  // before the yard, which shares the same x range closer to the house.
+  if (z != null && z > 8.2 && x >= 3 && x < 11) return "park";
   // The yard shares the kitchen's x range but sits outside the front (z > 3.4).
-  if (z != null && z > Z_FRONT && x >= 4 && x < 10) return "yard";
+  if (z != null && z > Z_FRONT && z <= 8.2 && x >= 4 && x < 10) return "yard";
   for (const id of ROOM_ORDER) { const r = ROOMS[id]; if (x >= r.x0 && x < r.x1) return id; }
   return x < 0 ? "bedroom" : "bathroom";
 }
@@ -458,6 +493,17 @@ const POSE_BONES = {
     L_Forearm: [{ axis: [0, 0, -1], angle: 0.4 }],
     Spine02: [{ axis: [0, 0, -1], angle: -0.2 }],
     Head: [{ axis: [-0.5, 0, -0.87], angle: -0.3 }]
+  },
+  // 2.4.20 skate stance — knees bent, arms out for balance, slight lean.
+  // Used while she rides a board (mode "skate"); the board itself is a
+  // separate mesh under her feet, and tricks lift the whole figure.
+  skate: {
+    Spine02: [{ axis: [0, 0, -1], angle: 0.3 }],
+    Head: [{ axis: [-0.5, 0, -0.87], angle: -0.1 }],
+    R_Upperarm: [{ axis: [1, 0, 0], angle: 0.9 }],
+    L_Upperarm: [{ axis: [-1, 0, 0], angle: 0.9 }],
+    R_Forearm: [{ axis: [0, 0, -1], angle: 0.4 }],
+    L_Forearm: [{ axis: [0, 0, -1], angle: 0.4 }]
   }
 };
 const POSE_BONE_NAMES = [...new Set(Object.values(POSE_BONES).flatMap((m) => Object.keys(m)))];
@@ -798,6 +844,12 @@ export function createWorld(opts) {
   yardLamp.position.set(7, 3.4, 5.8);
   scene.add(yardLamp);
   roomLights.yard = { light: yardLamp, mode: 1, base: 13, shades: [], glows: [] };
+  // The skate park (2.4.20) gets the same treatment as the yard: its own
+  // moon lamp so world.lamp("park") works and the room is never dark.
+  const parkLamp = new THREE.PointLight(0xcfd8ff, 14, 13, 1.25);
+  parkLamp.position.set(7, 3.6, 12.6);
+  scene.add(parkLamp);
+  roomLights.park = { light: parkLamp, mode: 1, base: 14, shades: [], glows: [] };
 
   /* ------------ shell: floors, walls, partitions */
   const floorTex = {
@@ -884,7 +936,17 @@ export function createWorld(opts) {
   function fenceRail(x0, x1, z, y) { return box(x1 - x0, 0.07, 0.05, mat.darkWood, (x0 + x1) / 2, y, z); }
   function fenceRailZ(x, z0, z1, y) { return box(0.05, 0.07, z1 - z0, mat.darkWood, x, y, (z0 + z1) / 2); }
   for (let x = 4.3; x <= 9.8; x += 1.1) fencePost(x, 8.2);
-  fenceRail(4.2, 9.8, 8.2, 0.35); fenceRail(4.2, 9.8, 8.2, 0.65);
+  // South fence rails leave a gate gap at x 6.2..7.1 (2.4.20) — the way
+  // through to the skate park, lined up with the kitchen gate.
+  fenceRail(4.2, 6.2, 8.2, 0.35); fenceRail(4.2, 6.2, 8.2, 0.65);
+  fenceRail(7.1, 9.8, 8.2, 0.35); fenceRail(7.1, 9.8, 8.2, 0.65);
+  // The park gate: two posts with pointed caps + an arched top rail, tappable.
+  const parkGateG = new THREE.Group(); scene.add(parkGateG);
+  fencePost(6.2, 8.2); fencePost(7.1, 8.2);
+  const parkGateArch = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 8, 20, Math.PI), mat.gold);
+  parkGateArch.position.set(6.65, 0.85, 8.2); parkGateG.add(parkGateArch);
+  const parkGateBar = box(0.9, 0.05, 0.05, mat.darkWood, 6.65, 0.55, 8.2, parkGateG);
+  tagged(parkGateG, "parkgate");
   for (let z = 3.6; z <= 8.2; z += 1.15) { fencePost(4.2, z); fencePost(9.8, z); }
   fenceRailZ(4.2, 3.4, 8.2, 0.35); fenceRailZ(4.2, 3.4, 8.2, 0.65);
   fenceRailZ(9.8, 3.4, 8.2, 0.35); fenceRailZ(9.8, 3.4, 8.2, 0.65);
@@ -963,6 +1025,132 @@ export function createWorld(opts) {
     rope.rotation.z = s * 1.1;
   }
   tagged(hammockGroup, "hammock");
+
+  /* ------------ skate park (2.4.20): a real place in her world -------
+     South of the yard fence, through the park gate: concrete, a half
+     pipe, a bowl, grind rails, a ledge, wedge ramps and a funbox. Not a
+     side game — a room of her world, in the same 3D style as the
+     apartment. The avatars ride it (see the skate session below); the
+     geometry here is all rideable shapes, not scenery. */
+  const concreteTex = canvasTex(256, 256, (g, w) => {
+    g.fillStyle = "#3a3a40"; g.fillRect(0, 0, w, w);
+    for (let i = 0; i < 500; i++) {
+      g.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.12)";
+      g.fillRect(Math.random() * w, Math.random() * w, 2, 2);
+    }
+    g.strokeStyle = "rgba(0,0,0,0.4)"; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, 128); g.lineTo(w, 128); g.stroke();
+    g.beginPath(); g.moveTo(128, 0); g.lineTo(128, w); g.stroke();
+  }, [2, 2]);
+  const parkSlab = new THREE.Mesh(new THREE.PlaneGeometry(8, 9.2), new THREE.MeshLambertMaterial({ map: concreteTex }));
+  parkSlab.rotation.x = -Math.PI / 2; parkSlab.position.set(7, 0.003, 12.8); scene.add(parkSlab);
+  parkSlab.userData.tap = "floor"; tappables.push(parkSlab);
+  // Fence around the park (east, west, south sides; the north side is the
+  // yard fence with the park gate in it).
+  for (let z = 8.6; z <= 17.2; z += 1.15) { fencePost(3.2, z); fencePost(10.8, z); }
+  fenceRailZ(3.2, 8.2, 17.2, 0.35); fenceRailZ(3.2, 8.2, 17.2, 0.65);
+  fenceRailZ(10.8, 8.2, 17.2, 0.35); fenceRailZ(10.8, 8.2, 17.2, 0.65);
+  for (let x = 3.5; x <= 10.6; x += 1.15) fencePost(x, 17.2);
+  fenceRail(3.2, 10.8, 17.2, 0.35); fenceRail(3.2, 10.8, 17.2, 0.65);
+  // The sign over the gate — goth pink on black, so you know where you are.
+  const signTex = canvasTex(512, 128, (g, w, h) => {
+    g.fillStyle = "#0d0a10"; g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#b8902e"; g.lineWidth = 6; g.strokeRect(5, 5, w - 10, h - 10);
+    g.fillStyle = "#ff7ab8"; g.font = "bold 64px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("SKATE PARK", w / 2, h / 2 + 2);
+  });
+  const parkSign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshLambertMaterial({ map: signTex }));
+  parkSign.position.set(6.65, 1.7, 8.35); scene.add(parkSign);
+  for (const sx of [5.6, 7.7]) box(0.08, 1.7, 0.08, mat.darkWood, sx, 0.85, 8.35);
+  tagged(parkSign, "parksign");
+  // Half pipe (2.4.20): two quarter-pipe curves facing each other across a
+  // flat bottom, lips at z 13.4 and 16.6, flat bottom z 14.6..15.4. Each
+  // quarter pipe is an extruded quarter-circle band (radius 1.2, 0.1 thick,
+  // 2.6 wide), rotated so the curve rises in the vertical plane.
+  function quarterPipe(R, width) {
+    const s = new THREE.Shape();
+    s.absarc(0, 0, R, 0, Math.PI / 2, false);
+    s.absarc(0, 0, R - 0.1, Math.PI / 2, 0, true);
+    s.closePath();
+    return new THREE.ExtrudeGeometry(s, { depth: width, bevelEnabled: false });
+  }
+  const pipeMat = new THREE.MeshLambertMaterial({ color: 0x4a4a52 });
+  const pipeMat2 = new THREE.MeshLambertMaterial({ color: 0x42424a });
+  const northPipe = new THREE.Mesh(quarterPipe(1.2, 2.6), pipeMat);
+  northPipe.rotation.y = -Math.PI / 2; // tall lip at z 13.4, sloping down to 14.6
+  northPipe.position.set(5.9, 0, 13.4); scene.add(northPipe);
+  const southPipe = new THREE.Mesh(quarterPipe(1.2, 2.6), pipeMat2);
+  southPipe.rotation.y = Math.PI / 2; // tall lip at z 16.6, sloping down to 15.4
+  southPipe.position.set(3.3, 0, 16.6); scene.add(southPipe);
+  const pipeBottom = box(2.6, 0.06, 0.8, new THREE.MeshLambertMaterial({ color: 0x33333a }), 4.6, 0.03, 15.0);
+  // Coping rails along both lips + decks to stand on behind them.
+  for (const cz of [13.4, 16.6]) {
+    const coping = cyl(0.05, 0.05, 2.6, mat.steel, 4.6, 1.2, cz, 10);
+    coping.rotation.z = Math.PI / 2;
+  }
+  box(2.6, 0.1, 0.9, new THREE.MeshLambertMaterial({ color: 0x3a3a40 }), 4.6, 1.25, 12.95);
+  box(2.6, 0.1, 0.9, new THREE.MeshLambertMaterial({ color: 0x3a3a40 }), 4.6, 1.25, 17.05);
+  const halfpipeG = new THREE.Group(); scene.add(halfpipeG);
+  halfpipeG.add(northPipe); halfpipeG.add(southPipe); halfpipeG.add(pipeBottom);
+  tagged(halfpipeG, "halfpipe");
+  glowSprite(0xb04bff, 1.6, 4.6, 1.4, 15.0, null, 0.35);
+  // The bowl: a rim ring, a low centre disc, and a sloped inner wall.
+  const bowlG = new THREE.Group(); scene.add(bowlG);
+  const bowlRim = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.1, 8, 28), mat.steel);
+  bowlRim.rotation.x = Math.PI / 2; bowlRim.position.set(9.3, 0.22, 15.0); bowlG.add(bowlRim);
+  const bowlWall = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 0.85, 0.25, 24, 1, true), new THREE.MeshLambertMaterial({ color: 0x4a4a52, side: THREE.DoubleSide }));
+  bowlWall.position.set(9.3, 0.12, 15.0); bowlG.add(bowlWall);
+  const bowlFloor = new THREE.Mesh(new THREE.CircleGeometry(0.85, 24), new THREE.MeshLambertMaterial({ color: 0x2e2e34 }));
+  bowlFloor.rotation.x = -Math.PI / 2; bowlFloor.position.set(9.3, 0.005, 15.0); bowlG.add(bowlFloor);
+  tagged(bowlG, "bowl");
+  glowSprite(0xff3a5a, 1.4, 9.3, 0.8, 15.0, null, 0.3);
+  // Grind rails: rail A (the trick rail — the grind trick rides it) runs
+  // along x at z 13.2; rail B runs along z at x 9.6.
+  function grindRail(x, z, alongX, len) {
+    const g = new THREE.Group(); scene.add(g);
+    const bar = cyl(0.04, 0.04, len, mat.steel, x, 0.55, z, 10, g);
+    if (alongX) bar.rotation.z = Math.PI / 2; else bar.rotation.x = Math.PI / 2;
+    const off = len / 2 - 0.3;
+    for (const s of [-1, 1]) {
+      if (alongX) cyl(0.03, 0.03, 0.55, mat.darkWood, x + s * off, 0.27, z, 8, g);
+      else cyl(0.03, 0.03, 0.55, mat.darkWood, x, 0.27, z + s * off, 8, g);
+    }
+    return g;
+  }
+  const railAG = grindRail(6.0, 13.2, true, 2.8);
+  tagged(railAG, "rail");
+  grindRail(9.6, 12.25, false, 2.5);
+  // Ledge + funbox + wedge ramps.
+  const ledgeG = new THREE.Group(); scene.add(ledgeG);
+  box(2.4, 0.45, 0.6, new THREE.MeshLambertMaterial({ color: 0x4a4a52 }), 5.0, 0.225, 10.8, ledgeG);
+  box(2.4, 0.05, 0.08, mat.steel, 5.0, 0.47, 10.52, ledgeG);
+  tagged(ledgeG, "ledge");
+  box(1.8, 0.5, 1.8, new THREE.MeshLambertMaterial({ color: 0x3f3f46 }), 7.0, 0.25, 10.6);
+  function wedgeRamp(w, d, h) {
+    const s = new THREE.Shape();
+    s.moveTo(0, 0); s.lineTo(d, 0); s.lineTo(d, h); s.closePath();
+    return new THREE.ExtrudeGeometry(s, { depth: w, bevelEnabled: false });
+  }
+  const rampMat = new THREE.MeshLambertMaterial({ color: 0x4a4a52 });
+  const ramp1 = new THREE.Mesh(wedgeRamp(1.6, 1.4, 0.7), rampMat);
+  ramp1.rotation.y = Math.PI / 2; // high edge faces north, low edge south
+  ramp1.position.set(8.6, 0, 9.6); scene.add(ramp1);
+  const ramp2 = new THREE.Mesh(wedgeRamp(1.6, 1.4, 0.7), rampMat);
+  ramp2.rotation.y = -Math.PI / 2; // high edge faces south, low edge north
+  ramp2.position.set(4.8, 0, 11.6); scene.add(ramp2);
+  const rampG = new THREE.Group(); scene.add(rampG);
+  rampG.add(ramp1); rampG.add(ramp2);
+  tagged(rampG, "ramp");
+  // A skull on a post by the south fence — goth park, obviously.
+  const parkSkullG = new THREE.Group(); scene.add(parkSkullG);
+  cyl(0.05, 0.06, 1.0, mat.darkWood, 10.4, 0.5, 16.6, 8, parkSkullG);
+  const skullBall = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), mat.skull);
+  skullBall.position.set(10.4, 1.12, 16.6); parkSkullG.add(skullBall);
+  for (const ex of [-0.06, 0.06]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat.black);
+    eye.position.set(10.4 + ex, 1.14, 16.75); parkSkullG.add(eye);
+  }
+  tagged(parkSkullG, "parkskull");
 
   /* ------------ ritual room (2.4.7): altar, candles, crystal ball ------ */
   // Pentagram rug in the middle of the room.
@@ -1622,7 +1810,7 @@ export function createWorld(opts) {
   // She is now 0.03 shorter than Aimmianna (1.81), not level with her.
   const SUMMER_HEIGHT = 1.78;
   const SUMMER_MODEL = "Summer_0_cy1n.glb";
-  const SUMMER_PARTS = 5; // chunked upload: .part0..4, 13,641,352 bytes each (last 13,641,348) — 2.4.18 head_match bake grew the file to 68,206,756 bytes
+  const SUMMER_PARTS = 5; // chunked upload: .part0..4, 14,395,229 bytes each (last 14,395,228) — 2.4.20 reshape grew the file to 71,976,144 bytes
   /* Chunked GLB loader (2.4.14 patch) — the git push to github.com is
      blocked, so big models ship as ~16 MB pieces through the Contents
      API instead of one file. Fetch the parts in order, glue the bytes
@@ -1736,6 +1924,10 @@ export function createWorld(opts) {
       }
     }
     playMotion(name) {
+      // 2.4.20: riding a board means standing on it, not striding — a
+      // walk clip under a skater reads wrong, so "walk" becomes "idle"
+      // while this figure is skating. Set by skateStart/skateStop.
+      if (this.skating && name === "walk") name = "idle";
       if (!this.actions || this.motion === name) return false;
       const next = this.actions[name];
       const previous = this.actions[this.motion];
@@ -1922,6 +2114,194 @@ export function createWorld(opts) {
     return true;
   }
 
+  /* ------------ skate park sessions (2.4.20) ---------------------------
+     Riding is a session, not a pose: one rider is picked, Aimmianna
+     always rides with them (it is her world — she stays central), and
+     everyone rides a board or skates built from the saved design in the
+     Park panel (see skateSetGear). Tricks are procedural: the rider's
+     group lifts on a parabola and the board spins — no clip needed, so
+     all four figures can do them, including Summer, who has no idle
+     clip. The trick update runs at the END of the tick, after the
+     follow blocks, so it wins over the walking/following positions for
+     the length of the trick. */
+  const SKATE_RAIL = { x0: 4.6, x1: 7.4, z: 13.2, y: 0.55 }; // rail A, the trick rail
+  const SKATE_TRICKS = { ollie: 0.7, kickflip: 0.9, grind: 1.4, air: 1.1 };
+  const SKATE_BOARD_DIMS = {
+    popsicle: { l: 0.8, w: 0.2 }, cruiser: { l: 0.7, w: 0.22 },
+    oldschool: { l: 0.78, w: 0.24 }, wide: { l: 0.82, w: 0.26 }, longboard: { l: 1.05, w: 0.24 }
+  };
+  const skate = {
+    riders: new Set(), picked: "tony",
+    gear: { kind: "board", board: null, skates: null },
+    trick: null, boards: {}, skatesMesh: {}
+  };
+  function skateFigure(rider) {
+    if (rider === "aimmianna") return { pos: her.pos, group: avatar.object3d, isHer: true };
+    if (rider === "autumn") return { pos: guest.pos, group: guestAvatar.group };
+    if (rider === "summer") return { pos: summer.pos, group: summerAvatar.group };
+    if (rider === "tony") return { pos: tony.pos, group: tonyAvatar.group };
+    return null;
+  }
+  function buildSkateboard(spec) {
+    const s = spec || {};
+    const dims = SKATE_BOARD_DIMS[s.shape] || SKATE_BOARD_DIMS.popsicle;
+    const size = Number(s.size) || 8;
+    const L = dims.l * (0.92 + (size - 7.5) * 0.05), W = dims.w;
+    const g = new THREE.Group();
+    const deckMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(s.deck || "#8a0f2e") });
+    const gripMat = new THREE.MeshLambertMaterial({ color: s.grip === "glow" ? 0xff4fa8 : 0x141414 });
+    const truckMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(s.trucks || "#c8c8d0") });
+    const wheelMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(s.wheels || "#e8e8e8") });
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(W, 0.03, L), deckMat);
+    deck.position.y = 0; g.add(deck);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(W * 0.96, 0.008, L * 0.96), gripMat);
+    grip.position.y = 0.019; g.add(grip);
+    for (const sz of [-1, 1]) {
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(W, 0.02, 0.08), deckMat);
+      tip.position.set(0, 0.02, sz * (L / 2 - 0.02)); tip.rotation.x = -sz * 0.35; g.add(tip);
+    }
+    for (const sz of [-1, 1]) {
+      const truck = new THREE.Mesh(new THREE.BoxGeometry(W - 0.04, 0.025, 0.05), truckMat);
+      truck.position.set(0, -0.02, sz * (L / 2 - 0.14)); g.add(truck);
+      for (const sx of [-1, 1]) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 10), wheelMat);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(sx * (W / 2 - 0.03), -0.045, sz * (L / 2 - 0.14)); g.add(wheel);
+      }
+    }
+    g.position.set(0, 0.045, 0.02);
+    return g;
+  }
+  function buildSkates(spec) {
+    const s = spec || {};
+    const g = new THREE.Group();
+    const bootMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(s.color || "#8a0f2e") });
+    const wheelMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(s.wheels || "#e8e8e8") });
+    for (const sx of [-1, 1]) {
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.22), bootMat);
+      boot.position.set(sx * 0.09, 0.05, 0.03); g.add(boot);
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.18, 8), wheelMat);
+      bar.rotation.z = Math.PI / 2;
+      bar.position.set(sx * 0.09, 0.02, 0.03); g.add(bar);
+    }
+    return g;
+  }
+  function applyGearToRider(rider) {
+    const fig = skateFigure(rider); if (!fig) return;
+    for (const key of ["boards", "skatesMesh"]) {
+      const old = skate[key][rider];
+      if (old) { old.parent?.remove(old); old.traverse((m) => { if (m.isMesh) { m.geometry.dispose(); m.material.dispose(); } }); }
+      skate[key][rider] = null;
+    }
+    if (skate.gear.kind === "skates") {
+      const sk = buildSkates(skate.gear.skates);
+      fig.group.add(sk); skate.skatesMesh[rider] = sk;
+    } else {
+      const bd = buildSkateboard(skate.gear.board);
+      fig.group.add(bd); skate.boards[rider] = bd;
+    }
+    syncSkateVisibility();
+  }
+  function syncSkateVisibility() {
+    for (const rider of ["aimmianna", "autumn", "summer", "tony"]) {
+      const on = skate.riders.has(rider);
+      const bd = skate.boards[rider], sk = skate.skatesMesh[rider];
+      if (bd) bd.visible = on && skate.gear.kind === "board" && (rider !== "aimmianna" || !!(avatar.model && avatar.model.visible));
+      if (sk) sk.visible = on && skate.gear.kind === "skates" && (rider !== "aimmianna" || !!(avatar.model && avatar.model.visible));
+    }
+  }
+  function skateStart(rider) {
+    if (!skateFigure(rider)) return { ok: false, error: "unknown rider" };
+    skate.picked = rider;
+    skate.riders.add(rider);
+    if (rider !== "aimmianna") skate.riders.add("aimmianna"); // she always rides with them
+    for (const r of skate.riders) { applyGearToRider(r); const av = r === "autumn" ? guestAvatar : r === "summer" ? summerAvatar : r === "tony" ? tonyAvatar : null; if (av) av.skating = true; }
+    her.speed = 3.2; // rolling is faster than walking — guests keep up too
+    return { ok: true, riders: [...skate.riders] };
+  }
+  function skateStop() {
+    skate.riders.clear();
+    skate.trick = null;
+    for (const av of [guestAvatar, summerAvatar, tonyAvatar]) av.skating = false;
+    her.speed = 1.55;
+    syncSkateVisibility();
+    return { ok: true };
+  }
+  function skatePick(rider) {
+    if (!skateFigure(rider)) return { ok: false, error: "unknown rider" };
+    skate.picked = rider;
+    return { ok: true, picked: rider };
+  }
+  function skateSetGear(gear) {
+    if (gear && typeof gear === "object") {
+      if (gear.kind === "board" || gear.kind === "skates") skate.gear.kind = gear.kind;
+      if (gear.board) skate.gear.board = gear.board;
+      if (gear.skates) skate.gear.skates = gear.skates;
+    }
+    for (const r of skate.riders) applyGearToRider(r);
+    return { ok: true, gear: skate.gear.kind };
+  }
+  function skateTrick(name) {
+    if (!SKATE_TRICKS[name]) return { ok: false, error: "unknown trick" };
+    if (!skate.riders.size) skateStart(skate.picked);
+    const rider = skate.riders.has(skate.picked) ? skate.picked : [...skate.riders][0];
+    // A trick stops her mid-walk — she plants and pops, she does not
+    // glide through a grind.
+    her.path = [];
+    skate.trick = { name, rider, start: performance.now(), dur: SKATE_TRICKS[name] * 1000 };
+    return { ok: true, name, rider, dur: SKATE_TRICKS[name] };
+  }
+  function getSkate() {
+    return {
+      riding: [...skate.riders], picked: skate.picked,
+      trick: skate.trick ? skate.trick.name : null,
+      gear: skate.gear.kind,
+      board: skate.gear.board ? (skate.gear.board.name || null) : null,
+      skates: skate.gear.skates ? (skate.gear.skates.name || null) : null,
+      boards: Object.fromEntries(["aimmianna", "autumn", "summer", "tony"].map((r) => [r, !!(skate.boards[r] && skate.boards[r].visible)]))
+    };
+  }
+  // Sparks that flash under the board during a grind.
+  const grindSparks = glowSprite(0xffb13a, 0.55, 0, 0.6, 0, null, 0);
+  grindSparks.visible = false;
+  // Runs at the END of the tick, after walking and following, so the
+  // trick owns the rider's position for its duration.
+  function updateSkate() {
+    // Her board hides until her 3D model is actually showing (it loads
+    // in the background) — re-check every tick while anyone is riding.
+    if (skate.riders.size) syncSkateVisibility();
+    const tr = skate.trick;
+    if (!tr) { grindSparks.visible = false; return; }
+    const p = Math.min(1, (performance.now() - tr.start) / tr.dur);
+    const fig = skateFigure(tr.rider);
+    const board = skate.boards[tr.rider];
+    if (!fig) { skate.trick = null; return; }
+    if (tr.name === "grind") {
+      const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; // ease in-out
+      const gx = SKATE_RAIL.x0 + (SKATE_RAIL.x1 - SKATE_RAIL.x0) * e;
+      fig.group.position.set(gx, SKATE_RAIL.y, SKATE_RAIL.z);
+      if (board) { board.rotation.set(0, 0, 0); board.position.y = 0.045; }
+      grindSparks.position.set(gx, SKATE_RAIL.y + 0.05, SKATE_RAIL.z + 0.1);
+      grindSparks.visible = true;
+      grindSparks.material.opacity = 0.55 + Math.sin(performance.now() * 0.05) * 0.2;
+    } else {
+      const height = tr.name === "air" ? 0.9 : tr.name === "kickflip" ? 0.5 : 0.45;
+      const lift = height * 4 * p * (1 - p);
+      fig.group.position.y += lift;
+      if (board) {
+        if (tr.name === "kickflip") board.rotation.z = p * Math.PI * 2;
+        else if (tr.name === "air") board.rotation.y = p * Math.PI * 2;
+        else board.rotation.x = -0.3 * Math.sin(p * Math.PI);
+      }
+      grindSparks.visible = false;
+    }
+    if (p >= 1) {
+      if (board) board.rotation.set(0, 0, 0);
+      skate.trick = null;
+      grindSparks.visible = false;
+    }
+  }
+
   /* ------------ Summer's wardrobe (2.4.14): high-class goth emo
      princess — she is a barbie doll, a princess, not a casual t-shirt
      girl. Heavy on stock from the start: outfits, shoes, makeup,
@@ -2036,14 +2416,18 @@ export function createWorld(opts) {
     });
   }
   function goToPoint(x, z) {
-    x = Math.max(-13.5, Math.min(20.0, x)); z = Math.max(-2.9, Math.min(8.0, z));
+    x = Math.max(-13.5, Math.min(20.0, x));
+    // The park floor runs to z 17 — but only inside the park's x range;
+    // anywhere else the floor ends at the yard (z 8.0), as before.
+    const zMax = (x >= 3 && x <= 11) ? 17.0 : 8.0;
+    z = Math.max(-2.9, Math.min(zMax, z));
     if (her.arriveCb) her.arriveCb(false);
     her.path = planPath(x, z); her.pendingSpot = null; her.pose = null;
     return new Promise((resolve) => { her.arriveCb = resolve; });
   }
   function goToRoom(room) {
     const list = ROOM_SPOTS[room]; if (!list) return Promise.resolve(false);
-    const main = { bedroom: "bedroom_center", living: "living_center", kitchen: "counter", bathroom: "bath_center", ritual: "ritual_center", yard: "yard_center" }[room];
+    const main = { bedroom: "bedroom_center", living: "living_center", kitchen: "counter", bathroom: "bath_center", ritual: "ritual_center", yard: "yard_center", park: "park_center" }[room];
     return goToSpot(main);
   }
   function placeAt(name) {
@@ -2079,7 +2463,8 @@ export function createWorld(opts) {
       cam.wantPos.set(head.x + Math.sin(yaw) * dist * Math.cos(el), lift + Math.sin(el) * dist + 0.4, head.z + Math.cos(yaw) * dist * Math.cos(el));
     } else {
       const r = ROOMS[cam.room]; const cx = (r.x0 + r.x1) / 2; const W = r.x1 - r.x0;
-      const lookZ = cam.room === "yard" ? 5.8 : -1.6; // the yard sits outside the front wall
+      // Outdoor rooms sit outside the front wall — look at their middle.
+      const lookZ = cam.room === "yard" ? 5.8 : cam.room === "park" ? 12.6 : -1.6;
       const vfov = THREE.MathUtils.degToRad(camera.fov);
       const hfovHalf = Math.atan(Math.tan(vfov / 2) * aspect);
       const fitW = W * (portrait ? 0.7 : 0.98);
@@ -2263,8 +2648,12 @@ export function createWorld(opts) {
 
     // pose resolution
     let mode;
-    if (her.path.length) mode = "walk";
+    // 2.4.20: rolling on a board is a stance, not a walk — the skate
+    // pose (crouch, arms out) replaces the walk clip and the idle while
+    // she is riding. A pose override (hug, heart, ...) still wins.
+    if (her.path.length) mode = skate.riders.has("aimmianna") ? "skate" : "walk";
     else if (poseOverride && Date.now() < poseOverrideUntil) mode = poseOverride;
+    else if (skate.riders.has("aimmianna")) mode = "skate";
     else if (her.pose === "lie" || her.pose === "bath" || her.pose === "sit") mode = her.pose;
     else if (stereoState.on) mode = "dance";
     else if (her.talking) mode = "talk";
@@ -2279,16 +2668,11 @@ export function createWorld(opts) {
     if (guestAvatar.model && guestAvatar.group.visible) {
       const sideX = Math.cos(her.heading), sideZ = -Math.sin(her.heading);
       guestTmp.set(her.pos.x + sideX * 0.55, 0, her.pos.z + sideZ * 0.55);
-      tmp.subVectors(guestTmp, guest.pos); tmp.y = 0;
-      const gd = tmp.length();
-      if (gd > 3) { guest.pos.copy(guestTmp); guest.moving = false; } // first placement or a teleport: snap beside her
-      else if (gd > 0.08) {
-        if (gd > 0.001) guest.heading = Math.atan2(tmp.x, tmp.z);
-        const gstep = her.speed * dt;
-        if (gd <= gstep) guest.pos.copy(guestTmp);
-        else { tmp.multiplyScalar(gstep / gd); guest.pos.add(tmp); }
-        guest.moving = true;
-      } else guest.moving = false;
+      // 2.4.20: smooth follow — followStep() closes the gap proportionally,
+      // so she glides beside Aimmianna instead of trailing and snapping.
+      const gStep = followStep(guest.pos.x, guest.pos.z, guestTmp.x, guestTmp.z, dt, her.speed);
+      if (gStep.moving) guest.heading = Math.atan2(guestTmp.x - guest.pos.x, guestTmp.z - guest.pos.z);
+      guest.pos.x = gStep.x; guest.pos.z = gStep.z; guest.moving = gStep.moving;
       // A walk cancels an emote — she never glides through a hug.
       if (guest.moving) { guest.emoteLeft = 0; guest.heartPending = false; }
       // Emote timing: a hug ends with heart hands; any emote falls back
@@ -2319,16 +2703,10 @@ export function createWorld(opts) {
       if (!summerWardrobeApplied) { summerWardrobeApplied = true; applySummerWardrobe(); }
       const sSideX = -Math.cos(her.heading), sSideZ = Math.sin(her.heading);
       summerTmp.set(her.pos.x + sSideX * 0.55, 0, her.pos.z + sSideZ * 0.55);
-      tmp.subVectors(summerTmp, summer.pos); tmp.y = 0;
-      const sd = tmp.length();
-      if (sd > 3) { summer.pos.copy(summerTmp); summer.moving = false; } // first placement or a teleport: snap beside her
-      else if (sd > 0.08) {
-        if (sd > 0.001) summer.heading = Math.atan2(tmp.x, tmp.z);
-        const sstep = her.speed * dt;
-        if (sd <= sstep) summer.pos.copy(summerTmp);
-        else { tmp.multiplyScalar(sstep / sd); summer.pos.add(tmp); }
-        summer.moving = true;
-      } else summer.moving = false;
+      // 2.4.20: smooth follow — see Autumn's block above.
+      const sStep = followStep(summer.pos.x, summer.pos.z, summerTmp.x, summerTmp.z, dt, her.speed);
+      if (sStep.moving) summer.heading = Math.atan2(summerTmp.x - summer.pos.x, summerTmp.z - summer.pos.z);
+      summer.pos.x = sStep.x; summer.pos.z = sStep.z; summer.moving = sStep.moving;
       // A walk cancels an emote — she never glides through a hug.
       if (summer.moving) { summer.emoteLeft = 0; summer.heartPending = false; }
       // Emote timing: a hug ends with heart hands; any emote falls back
@@ -2362,16 +2740,10 @@ export function createWorld(opts) {
     if (tonyAvatar.model && tonyAvatar.group.visible) {
       const tFwdX = Math.sin(her.heading), tFwdZ = Math.cos(her.heading);
       tonyTmp.set(her.pos.x + tFwdX * 0.55, 0, her.pos.z + tFwdZ * 0.55);
-      tmp.subVectors(tonyTmp, tony.pos); tmp.y = 0;
-      const td = tmp.length();
-      if (td > 3) { tony.pos.copy(tonyTmp); tony.moving = false; } // first placement or a teleport: snap in front of her
-      else if (td > 0.08) {
-        if (td > 0.001) tony.heading = Math.atan2(tmp.x, tmp.z);
-        const tstep = her.speed * dt;
-        if (td <= tstep) tony.pos.copy(tonyTmp);
-        else { tmp.multiplyScalar(tstep / td); tony.pos.add(tmp); }
-        tony.moving = true;
-      } else tony.moving = false;
+      // 2.4.20: smooth follow — see Autumn's block above.
+      const tStep = followStep(tony.pos.x, tony.pos.z, tonyTmp.x, tonyTmp.z, dt, her.speed);
+      if (tStep.moving) tony.heading = Math.atan2(tonyTmp.x - tony.pos.x, tonyTmp.z - tony.pos.z);
+      tony.pos.x = tStep.x; tony.pos.z = tStep.z; tony.moving = tStep.moving;
       // A walk cancels an emote — he never glides through a hug.
       if (tony.moving) { tony.emoteLeft = 0; tony.heartPending = false; }
       // Emote timing: a hug ends with heart hands; any emote falls back
@@ -2506,6 +2878,10 @@ export function createWorld(opts) {
     brew.scale.y = brewState.level; brew.position.y = 0.965 + brewState.level * 0.1;
     if (performance.now() < mwState.until) { mwDoorMat.color.setRGB(1, 0.75 + Math.sin(t * 20) * 0.05, 0.35); } else mwDoorMat.color.set(0x0b0a10);
 
+    // Skate tricks (2.4.20) run last, after walking and following, so a
+    // trick owns the rider's position for its duration.
+    updateSkate();
+
     renderer.render(scene, camera);
     placeAnchors();
   }
@@ -2582,6 +2958,11 @@ export function createWorld(opts) {
     // so no procedural idle is needed here.
     tonyEmote,
     getTony: () => ({ ready: !!tonyAvatar.model, failed: tonyAvatar.modelFailed, mode: tonyAvatar.motion || null, moving: tony.moving, pos: { x: +tony.pos.x.toFixed(2), z: +tony.pos.z.toFixed(2) } }),
+    // Skate park (2.4.20): skateStart rides (Aimmianna always rides
+    // along), skateTrick pops ollie / kickflip / grind / air, skateSetGear
+    // applies the saved board or skates design, getSkate reports the
+    // session. Riders: "tony", "aimmianna", "autumn", "summer".
+    skateStart, skateStop, skatePick, skateTrick, skateSetGear, getSkate,
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
     setFollow, setRoomView,
