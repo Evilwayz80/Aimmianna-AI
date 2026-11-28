@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.20";
+const VERSION = "Aimmianna 3D v2.4.21";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -163,6 +163,9 @@ const els = {};
  "albumLabel","albumFile","noteInput","noteList","bedtimeTime","bedtimeStatus",
  "alarmTime","alarmDaily","alarmStatus","calTitle","calGrid","calDayLabel","calNote",
  "sheet","sheetTitle","sheetBody","speech","phoneOverlay","phoneBadge","followBtn","roomSelect",
+ "parkStatus","parkGearStatus","parkBoardList","parkSkateList","parkBoardName","parkBoardShape","parkBoardSize",
+ "parkBoardDeck","parkBoardArt","parkBoardGrip","parkBoardTrucks","parkBoardWheels","parkBoardSticker",
+ "parkSkateName","parkSkateBoot","parkSkateWheels","parkSkateStyle",
  "tvOverlay","voiceEl","startOverlay","loadState"
 ].forEach((id) => { els[id] = $(id); });
 
@@ -207,9 +210,9 @@ const PANEL_TITLES = {
   calendarSection: "Calendar", bedSection: "Bedtime", alarmSection: "Alarm Clock",
   settingsSection: "Settings", skillsSection: "Her Skills & Bond", lifeSection: "Private Game Mode", cardsSection: "Card Games",
   routinesSection: "Routines", posesSection: "Poses", rulesSection: "Rules & Appreciation",
-  summerSection: "Summer's Wardrobe"
+  summerSection: "Summer's Wardrobe", parkSection: "Skate Park"
 };
-const TALL = { chatSection: 1, wardrobeSection: 1, careSection: 1, gamesSection: 1, settingsSection: 1, skillsSection: 1, tvSection: 1, stereoSection: 1, lifeSection: 1, cardsSection: 1, routinesSection: 1, posesSection: 1, rulesSection: 1 };
+const TALL = { chatSection: 1, wardrobeSection: 1, careSection: 1, gamesSection: 1, settingsSection: 1, skillsSection: 1, tvSection: 1, stereoSection: 1, lifeSection: 1, cardsSection: 1, routinesSection: 1, posesSection: 1, rulesSection: 1, parkSection: 1 };
 let openPanelId = "";
 function openPanel(id) {
   if (IS_ANDROID_WALLPAPER) return;
@@ -288,6 +291,7 @@ function onPanelOpened(id) {
   if (id === "posesSection") renderPoses();
   if (id === "wardrobeSection") refreshOutfitStatus();
   if (id === "summerSection") renderSummerWardrobe();
+  if (id === "parkSection") renderPark();
   if (id === "tvSection" || id === "stereoSection") { media.renderFavs(); media.refreshStatus(); }
 }
 
@@ -570,7 +574,9 @@ const avatarOutfit = $("avatarOutfit");
 const avatarWeapon = $("avatarWeapon");
 const WEAPON_CHOICES = [
   ["none", "No weapon"], ["sword", "Moonsteel Sword"], ["dagger", "Vampire Dagger"], ["staff", "Witch Staff"],
-  ["wand", "Spell Wand"], ["scythe", "Reaper Scythe"], ["bow", "Nightshade Bow"]
+  ["wand", "Spell Wand"], ["scythe", "Reaper Scythe"], ["bow", "Nightshade Bow"],
+  // 2.4.21: Final Fantasy-style — the 3D builds already live in outfits3d.js.
+  ["buster", "Buster Blade"], ["gunblade", "Gunblade"]
 ];
 WEAPON_CHOICES.forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; avatarWeapon.appendChild(o); });
 const OUTFIT_CHOICES = ["closet", "original", "black-top"];
@@ -2110,7 +2116,7 @@ async function runTool(name, a) {
       const games = { memory: 0, ember: 1, dice: 2, tarot: 3 };
       if (n in games) { openPanel("gamesSection"); showGameTab(games[n]); if (n === "tarot") setTimeout(drawTarot, 600); gainXP("gamer", 1); return { ok: true, opened: n, note: "opened " + n }; }
       if (n === "card_games" || n === "game_updates") { openPanel("cardsSection"); if (n === "game_updates") cardGame.openUpdates(); return { ok: true, opened: n, note: "opened " + n.replace("_", " ") }; }
-      const panels = { photo_album: "albumSection", wardrobe: "wardrobeSection", care: "careSection", calendar: "calendarSection", notes: "notesSection", skills: "skillsSection" };
+      const panels = { photo_album: "albumSection", wardrobe: "wardrobeSection", care: "careSection", calendar: "calendarSection", notes: "notesSection", skills: "skillsSection", skate_park: "parkSection" };
       if (n === "phone") { openPhone(); return { ok: true, opened: "phone" }; }
       if (panels[n]) { if (n === "photo_album") { holdRoutine(90000); world.goToSpot("couch"); } openPanel(panels[n]); return { ok: true, opened: n, note: "opened " + n.replace("_", " ") }; }
       return { ok: false, error: "unknown activity" };
@@ -3565,7 +3571,7 @@ window.__aimmiannaMasterOverride = masterOverride;
    new PIN. */
 function buildWorldBackup() {
   return {
-    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 260,
+    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 262,
     exportedAt: new Date().toISOString(), state: JSON.parse(JSON.stringify(state))
   };
 }
@@ -5319,6 +5325,214 @@ $("yardWxAuto")?.addEventListener("click", () => setYardWeather("auto"));
 $("yardWxClear")?.addEventListener("click", () => setYardWeather("clear"));
 $("yardWxCloudy")?.addEventListener("click", () => setYardWeather("cloudy"));
 $("yardWxRain")?.addEventListener("click", () => setYardWeather("rain"));
+
+/* ---------------- skate park (2.4.21) ----------------
+   The 3D park room + skate session live in world3d.js (staged in
+   2.4.20). This panel is the UI: pick a rider, build boards and skates,
+   save them on this device, ride together, pop tricks. Boards and skates
+   are saved designs (specs), not pictures — the world builds the 3D
+   board or skates from the spec when someone rides. Everything here
+   works without the world too: picks save, and the ride waits for the
+   room instead of failing silently. */
+const SKATE_KEYS = {
+  boards: "aimmianna-skate-boards-v1", skates: "aimmianna-skates-v1",
+  gear: "aimmianna-skate-gear-v1", rider: "aimmianna-skate-active-v1"
+};
+const SKATE_RIDERS = ["tony", "summer", "autumn", "aimmianna"];
+const SKATE_RIDER_LABELS = { tony: "Tony", summer: "Summer", autumn: "Autumn", aimmianna: "Aimmianna" };
+const BOARD_SHAPE_LABELS = { popsicle: "Popsicle", cruiser: "Cruiser", oldschool: "Old School", wide: "Wide", longboard: "Longboard" };
+const BOARD_ART_LABELS = { plain: "Plain", skull: "Skull stripe", flames: "Flames stripe", roses: "Roses stripe", galaxy: "Galaxy stripe", checker: "Checker stripe" };
+const BOARD_STICKER_LABELS = { none: "No sticker", skull: "Skull", rose: "Rose", flame: "Flame", star: "Star", moon: "Moon" };
+const SKATE_STYLE_LABELS = { quad: "Quad", inline: "Inline" };
+function loadSkateJSON(key, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(key) || "null"); return v == null ? fallback : v; } catch (e) { return fallback; }
+}
+function saveSkateJSON(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
+function skateBoards() { const b = loadSkateJSON(SKATE_KEYS.boards, []); return Array.isArray(b) ? b : []; }
+function skateSkates() { const s = loadSkateJSON(SKATE_KEYS.skates, []); return Array.isArray(s) ? s : []; }
+function skateGear() {
+  const g = loadSkateJSON(SKATE_KEYS.gear, null);
+  if (g && (g.kind === "board" || g.kind === "skates")) return g;
+  return { kind: "board", boardId: null, skatesId: null };
+}
+function skateRider() {
+  const r = loadSkateJSON(SKATE_KEYS.rider, "tony");
+  return SKATE_RIDERS.indexOf(r) !== -1 ? r : "tony";
+}
+function activeBoardSpec() {
+  const g = skateGear(); if (g.kind !== "board") return null;
+  return skateBoards().find((b) => b.id === g.boardId) || null;
+}
+function activeSkateSpec() {
+  const g = skateGear(); if (g.kind !== "skates") return null;
+  return skateSkates().find((s) => s.id === g.skatesId) || null;
+}
+function applySkateGear() {
+  // The world builds the 3D board/skates from the saved spec; with no
+  // saved design it builds the usual board (null spec = defaults).
+  try { world?.skateSetGear?.({ kind: skateGear().kind, board: activeBoardSpec(), skates: activeSkateSpec() }); } catch (e) { console.warn("skate gear unavailable", e); }
+}
+function skateStatusText() {
+  let sk = null;
+  try { sk = world?.getSkate?.() || null; } catch (e) { sk = null; }
+  if (sk && sk.riding && sk.riding.length) {
+    const names = sk.riding.map((r) => SKATE_RIDER_LABELS[r] || r).join(" + ");
+    const gearName = sk.gear === "skates" ? (sk.skates || "skates") : (sk.board || "the usual board");
+    const trick = sk.trick ? " — " + sk.trick + "!" : "";
+    return "Riding: " + names + " on " + gearName + trick;
+  }
+  return "Nobody riding yet — pick a rider and tap Ride together.";
+}
+function renderPark() {
+  if (els.parkStatus) els.parkStatus.textContent = skateStatusText();
+  const g = skateGear();
+  if (els.parkGearStatus) {
+    if (g.kind === "skates") {
+      const s = activeSkateSpec();
+      els.parkGearStatus.textContent = s ? "Skates: " + s.name + " (" + (SKATE_STYLE_LABELS[s.style] || s.style) + ")" : "Skates: none built yet — build a pair below, or ride the usual skates.";
+    } else {
+      const b = activeBoardSpec();
+      els.parkGearStatus.textContent = b ? "Board: " + b.name + " — " + (BOARD_SHAPE_LABELS[b.shape] || b.shape) + " " + b.size + "″" : "Board: none built yet — build one below, or ride the usual board.";
+    }
+  }
+  document.querySelectorAll("[data-park-rider]").forEach((b) => b.classList.toggle("active", b.dataset.parkRider === skateRider()));
+  const gb = $("parkGearBoard"), gs = $("parkGearSkates");
+  if (gb) gb.classList.toggle("active", g.kind === "board");
+  if (gs) gs.classList.toggle("active", g.kind === "skates");
+  const bl = els.parkBoardList;
+  if (bl) {
+    bl.innerHTML = "";
+    const boards = skateBoards();
+    if (!boards.length) { const p = document.createElement("p"); p.className = "help"; p.textContent = "No boards saved yet."; bl.appendChild(p); }
+    boards.forEach((b) => {
+      const card = document.createElement("div"); card.className = "board-card";
+      const nm = document.createElement("b"); nm.textContent = b.name; card.appendChild(nm);
+      const meta = document.createElement("span");
+      meta.textContent = (BOARD_SHAPE_LABELS[b.shape] || b.shape) + " " + b.size + "″ • " + (BOARD_ART_LABELS[b.art] || "Plain") + (b.sticker && b.sticker !== "none" ? " • " + (BOARD_STICKER_LABELS[b.sticker] || b.sticker) + " sticker" : "");
+      card.appendChild(meta);
+      const row = document.createElement("div"); row.className = "btn-row";
+      const ride = document.createElement("button"); ride.type = "button"; ride.className = "wide-btn accent";
+      ride.textContent = g.kind === "board" && g.boardId === b.id ? "Riding this board ✓" : "Ride this board";
+      ride.addEventListener("click", () => { const gg = skateGear(); gg.kind = "board"; gg.boardId = b.id; saveSkateJSON(SKATE_KEYS.gear, gg); applySkateGear(); renderPark(); toast("Board ready — " + b.name + "."); });
+      const del = document.createElement("button"); del.type = "button"; del.className = "wide-btn danger"; del.textContent = "Delete";
+      del.addEventListener("click", () => {
+        saveSkateJSON(SKATE_KEYS.boards, skateBoards().filter((x) => x.id !== b.id));
+        const gg = skateGear(); if (gg.boardId === b.id) { gg.boardId = null; saveSkateJSON(SKATE_KEYS.gear, gg); }
+        applySkateGear(); renderPark(); toast("Board deleted.");
+      });
+      row.append(ride, del); card.appendChild(row); bl.appendChild(card);
+    });
+  }
+  const sl = els.parkSkateList;
+  if (sl) {
+    sl.innerHTML = "";
+    const skates = skateSkates();
+    if (!skates.length) { const p = document.createElement("p"); p.className = "help"; p.textContent = "No skates saved yet."; sl.appendChild(p); }
+    skates.forEach((s) => {
+      const card = document.createElement("div"); card.className = "board-card";
+      const nm = document.createElement("b"); nm.textContent = s.name; card.appendChild(nm);
+      const meta = document.createElement("span"); meta.textContent = (SKATE_STYLE_LABELS[s.style] || s.style) + " skates"; card.appendChild(meta);
+      const row = document.createElement("div"); row.className = "btn-row";
+      const ride = document.createElement("button"); ride.type = "button"; ride.className = "wide-btn accent";
+      ride.textContent = g.kind === "skates" && g.skatesId === s.id ? "Riding these skates ✓" : "Ride these skates";
+      ride.addEventListener("click", () => { const gg = skateGear(); gg.kind = "skates"; gg.skatesId = s.id; saveSkateJSON(SKATE_KEYS.gear, gg); applySkateGear(); renderPark(); toast("Skates ready — " + s.name + "."); });
+      const del = document.createElement("button"); del.type = "button"; del.className = "wide-btn danger"; del.textContent = "Delete";
+      del.addEventListener("click", () => {
+        saveSkateJSON(SKATE_KEYS.skates, skateSkates().filter((x) => x.id !== s.id));
+        const gg = skateGear(); if (gg.skatesId === s.id) { gg.skatesId = null; saveSkateJSON(SKATE_KEYS.gear, gg); }
+        applySkateGear(); renderPark(); toast("Skates deleted.");
+      });
+      row.append(ride, del); card.appendChild(row); sl.appendChild(card);
+    });
+  }
+}
+function saveParkBoard() {
+  const name = (els.parkBoardName?.value || "").trim() || "My Board";
+  const spec = {
+    id: uid(), name,
+    shape: els.parkBoardShape?.value || "popsicle",
+    size: Number(els.parkBoardSize?.value) || 8,
+    deck: els.parkBoardDeck?.value || "#8a0f2e",
+    art: els.parkBoardArt?.value || "plain",
+    grip: els.parkBoardGrip?.value || "black",
+    trucks: els.parkBoardTrucks?.value || "#c8c8d0",
+    wheels: els.parkBoardWheels?.value || "#e8e8e8",
+    sticker: els.parkBoardSticker?.value || "none"
+  };
+  const boards = skateBoards(); boards.push(spec); saveSkateJSON(SKATE_KEYS.boards, boards);
+  const gg = skateGear(); gg.kind = "board"; gg.boardId = spec.id; saveSkateJSON(SKATE_KEYS.gear, gg);
+  if (els.parkBoardName) els.parkBoardName.value = "";
+  applySkateGear(); renderPark();
+  toast("Board saved — " + spec.name + ".");
+}
+function saveParkSkates() {
+  const name = (els.parkSkateName?.value || "").trim() || "My Skates";
+  const spec = {
+    id: uid(), name,
+    style: els.parkSkateStyle?.value || "quad",
+    color: els.parkSkateBoot?.value || "#8a0f2e",
+    wheels: els.parkSkateWheels?.value || "#e8e8e8"
+  };
+  const skates = skateSkates(); skates.push(spec); saveSkateJSON(SKATE_KEYS.skates, skates);
+  const gg = skateGear(); gg.kind = "skates"; gg.skatesId = spec.id; saveSkateJSON(SKATE_KEYS.gear, gg);
+  if (els.parkSkateName) els.parkSkateName.value = "";
+  applySkateGear(); renderPark();
+  toast("Skates saved — " + spec.name + ".");
+}
+$("parkGo")?.addEventListener("click", () => {
+  if (!world) { toast("The 3D room is still loading — the park opens once it does."); return; }
+  holdRoutine(180000); world.goToRoom("park");
+  speakLine(pickOne(["To the park! Half pipe's calling our names.", "Park time — grab your board, bestie. I'll race you to the gate."]), { quietIfRecent: true });
+});
+document.querySelectorAll("[data-park-spot]").forEach((b) => {
+  b.addEventListener("click", () => {
+    if (!world) { toast("The 3D room is still loading — the park opens once it does."); return; }
+    holdRoutine(120000); world.goToSpot(b.dataset.parkSpot);
+  });
+});
+document.querySelectorAll("[data-park-rider]").forEach((b) => {
+  b.addEventListener("click", () => {
+    saveSkateJSON(SKATE_KEYS.rider, b.dataset.parkRider);
+    try { world?.skatePick?.(b.dataset.parkRider); } catch (e) {}
+    renderPark();
+  });
+});
+$("parkGearBoard")?.addEventListener("click", () => { const gg = skateGear(); gg.kind = "board"; saveSkateJSON(SKATE_KEYS.gear, gg); applySkateGear(); renderPark(); });
+$("parkGearSkates")?.addEventListener("click", () => { const gg = skateGear(); gg.kind = "skates"; saveSkateJSON(SKATE_KEYS.gear, gg); applySkateGear(); renderPark(); });
+$("parkRideBtn")?.addEventListener("click", () => {
+  if (!world) { toast("The 3D room is still loading — your board is saved, ride once it opens."); return; }
+  holdRoutine(180000); world.goToRoom("park");
+  const r = world.skateStart(skateRider());
+  if (r && r.ok) speakLine(pickOne([
+    "Let's roll — half pipe first, then the rail. Try not to eat concrete, Tony.",
+    "Boards out, everyone in the park. I call the half pipe first.",
+    "Skate park time! You, me, and the concrete. Let's see what you got, bestie."
+  ]), { quietIfRecent: true });
+  renderPark();
+});
+$("parkStopBtn")?.addEventListener("click", () => {
+  if (!world) { toast("Nobody is riding yet."); return; }
+  world.skateStop();
+  speakLine(pickOne(["Okay, boards down. That was a good roll.", "Done skating for now — my feet need a break, bestie."]), { quietIfRecent: true });
+  renderPark();
+});
+const PARK_TRICK_LINES = {
+  ollie: ["Ollie! Clean pop, nice.", "Up and over — you got air, Tony!"],
+  kickflip: ["Kickflip! The board spun perfect.", "Kickflip, look at you go!"],
+  grind: ["Grinding the rail — sparks and everything.", "That grind was smooth. Again!"],
+  air: ["Big air! You flew, bestie.", "Air time! The half pipe loves you."]
+};
+document.querySelectorAll("[data-park-trick]").forEach((b) => {
+  b.addEventListener("click", () => {
+    if (!world) { toast("The 3D room is still loading — tricks wait until it opens."); return; }
+    const name = b.dataset.parkTrick;
+    const r = world.skateTrick(name);
+    if (r && r.ok) speakLine(pickOne(PARK_TRICK_LINES[name] || ["Nice!"]), { quietIfRecent: true });
+    renderPark();
+  });
+});
+$("parkSaveBoard")?.addEventListener("click", saveParkBoard);
+$("parkSaveSkates")?.addEventListener("click", saveParkSkates);
 $("yardLocBtn")?.addEventListener("click", () => {
   // Permissions: location is only read when he taps this, never on load.
   if (!permOn("location")) { askPerm("location", "Location is off — turn on Location in Permissions if you want the yard light to follow your real sunrise and sunset."); return; }
@@ -5984,6 +6198,8 @@ function initWorld() {
   // Summer's saved wardrobe picks (2.4.14): re-apply them to her figure.
   if (world.setSummerWardrobe) Object.entries(state.summerWardrobe || {}).forEach(([k, v]) => world.setSummerWardrobe(k, v));
   renderSummerWardrobe();
+  // 2.4.21: the saved board / skates go on the riders as soon as the world opens.
+  applySkateGear();
   $("lifeEntry").hidden = IS_WALLPAPER;
   world.setAnchors([$("anchorBubble"), $("anchorFx")]);
   const h = new Date().getHours();
