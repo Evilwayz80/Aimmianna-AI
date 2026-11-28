@@ -32,7 +32,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.23";
+const VERSION = "Aimmianna 3D v2.4.24";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -71,7 +71,7 @@ const DEFAULT_STATE = {
   behaviorRules: [], reminders: [], notifications: [],
   neuralVoice: "en-US-JennyNeural", neuralRate: "+6%", ttsServer: "",
   toolsOn: true, searchOn: true, learningTurns: 0,
-  gyroWanted: true, lowPower: false, wpHud: true, wpVoice: false,
+  gyroWanted: true, lowPower: false, lightMode: false, wpHud: true, wpVoice: false,
   led: "purple", tarotDraws: 0,
   tasks: [], skills: {}, bondBonus: 0, visitStreak: 1, lastVisit: "", lastBriefing: "", lastLifeMomentShared: "",
   lastCheckin: 0, lastNudge: 0, lastSelfcare: 0, city: "", autonomy: true,
@@ -3912,7 +3912,7 @@ function buildWorldBackup() {
   try { builder = JSON.parse(localStorage.getItem(BUILDER_KEYS.shared) || "null"); } catch { builder = null; }
   try { builderSlots = JSON.parse(localStorage.getItem(BUILDER_KEYS.slots) || "null"); } catch { builderSlots = null; }
   return {
-    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 264,
+    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 265,
     exportedAt: new Date().toISOString(), state: JSON.parse(JSON.stringify(state)),
     builder, builderSlots
   };
@@ -5405,6 +5405,10 @@ $("gyroToggle").addEventListener("change", async (e) => {
 });
 $("lowPower").checked = !!state.lowPower;
 $("lowPower").addEventListener("change", (e) => { state.lowPower = e.target.checked; saveState(); world.setLowPower && world.setLowPower(state.lowPower); });
+// 2.4.24 Light mode: guests don't load, aura discs + drifting petals off,
+// edge smoothing off after a close + reopen (see the help under the box).
+$("lightMode").checked = !!state.lightMode;
+$("lightMode").addEventListener("change", (e) => { state.lightMode = e.target.checked; saveState(); world.setLightMode && world.setLightMode(state.lightMode); });
 
 /* ================= updates + backup ================= */
 const APP_BUILD = 242;
@@ -6871,6 +6875,7 @@ $("lifeRoom").addEventListener("change", (e) => {
 function initWorld() {
   world = createWorld({
     canvas: $("scene"),
+    lightMode: !!state.lightMode, // 2.4.24: edge smoothing off from a fresh open when on
     onTap: onWorldTap,
     onArrive,
     onRoomChange: (room) => { els.roomLabel.textContent = ROOMS[room] ? ROOMS[room].label : ""; },
@@ -6901,6 +6906,7 @@ function initWorld() {
   markYardWx(state.yardWeather || "auto"); refreshYardStatus();
   if (h >= 22 || h < 6) world.lamp("all", "purple");
   if (state.lowPower && world.setLowPower) world.setLowPower(true);
+  if (state.lightMode && world.setLightMode) world.setLightMode(true); // 2.4.24: guests stay unloaded, auras + petals off
   // follow her by default
   world.setFollow(); refreshRoomBar();
   connectLiveAfterLogin(); // 2.4.23: live joins once the world is up (login may already be known)
