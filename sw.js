@@ -8,11 +8,11 @@
    iOS killed Safari for memory. Now a new version re-downloads only the
    models whose ?v= changed; the rest stay warm. No file over ~5 MB ever
    goes into the version cache either. */
-const VERSION = "aimmianna-3d-v2.4.22";
+const VERSION = "aimmianna-3d-v2.4.23";
 const MODELS_CACHE = "aimmianna-models";
 const MAX_VERSION_CACHE_BYTES = 5 * 1024 * 1024;
 const SHELL = [
-  "./", "index.html", "styles.css", "app.js", "companion-memory.js", "master-release.js", "master-release-config.js", "world3d.js", "outfits3d.js", "cards.js", "game-updates.js", "assets/cards/m_bunny.webp", "assets/cards/m_mew.webp", "assets/cards/m_pip.webp", "assets/cards/m_coral.webp", "assets/cards/m_ember.webp", "assets/cards/m_lune.webp", "assets/cards/m_raven.webp", "assets/models/outfit3d-mask.png", "vendor/three.module.min.js",
+  "./", "index.html", "styles.css", "app.js", "companion-memory.js", "master-release.js", "master-release-config.js", "world3d.js", "outfits3d.js", "cards.js", "game-updates.js", "live.js", "assets/cards/m_bunny.webp", "assets/cards/m_mew.webp", "assets/cards/m_pip.webp", "assets/cards/m_coral.webp", "assets/cards/m_ember.webp", "assets/cards/m_lune.webp", "assets/cards/m_raven.webp", "assets/models/outfit3d-mask.png", "vendor/three.module.min.js",
   "SAYINGS.json", "manifest.webmanifest", "assets/figure/aimmianna_human_fullbody.png",
   "life-sim.js", "life-rules.js", "life-figures.js", "life-lessons.js", "life-stories.js", "life-projects.js",
   "life-signals.js", "life-signal-camera.js", "life-signal-sessions.js"
