@@ -10,7 +10,7 @@
    goes into the version cache either.
    2.4.24 — models are Draco-compressed; the Draco decoder (vendor/draco/)
    is precached with the shell so the first model load never waits on it. */
-const VERSION = "aimmianna-3d-v2.4.24";
+const VERSION = "aimmianna-3d-v2.4.25";
 const MODELS_CACHE = "aimmianna-models";
 const MAX_VERSION_CACHE_BYTES = 5 * 1024 * 1024;
 const SHELL = [
