@@ -7,15 +7,19 @@
    version had a cold cache and had to swallow ~200 MB of models at once —
    iOS killed Safari for memory. Now a new version re-downloads only the
    models whose ?v= changed; the rest stay warm. No file over ~5 MB ever
-   goes into the version cache either. */
-const VERSION = "aimmianna-3d-v2.4.23";
+   goes into the version cache either.
+   2.4.24 — models are Draco-compressed; the Draco decoder (vendor/draco/)
+   is precached with the shell so the first model load never waits on it. */
+const VERSION = "aimmianna-3d-v2.4.24";
 const MODELS_CACHE = "aimmianna-models";
 const MAX_VERSION_CACHE_BYTES = 5 * 1024 * 1024;
 const SHELL = [
   "./", "index.html", "styles.css", "app.js", "companion-memory.js", "master-release.js", "master-release-config.js", "world3d.js", "outfits3d.js", "cards.js", "game-updates.js", "live.js", "assets/cards/m_bunny.webp", "assets/cards/m_mew.webp", "assets/cards/m_pip.webp", "assets/cards/m_coral.webp", "assets/cards/m_ember.webp", "assets/cards/m_lune.webp", "assets/cards/m_raven.webp", "assets/models/outfit3d-mask.png", "vendor/three.module.min.js",
   "SAYINGS.json", "manifest.webmanifest", "assets/figure/aimmianna_human_fullbody.png",
   "life-sim.js", "life-rules.js", "life-figures.js", "life-lessons.js", "life-stories.js", "life-projects.js",
-  "life-signals.js", "life-signal-camera.js", "life-signal-sessions.js"
+  "life-signals.js", "life-signal-camera.js", "life-signal-sessions.js",
+  "vendor/loaders/DRACOLoader.js",
+  "vendor/draco/draco_decoder.js", "vendor/draco/draco_decoder.wasm", "vendor/draco/draco_wasm_wrapper.js"
 ];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL))); });
 self.addEventListener("activate", (e) => {
