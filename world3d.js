@@ -9,6 +9,7 @@
    bundled 3D model without changing navigation, camera or wallpaper input. */
 import * as THREE from "./vendor/three.module.min.js";
 import { OUTFIT_3D, hasOutfit3D, buildOutfitTexture, buildGarments, buildWeapon, hasWeapon3D } from "./outfits3d.js";
+import { remoteLookahead } from "./live.js"; // 2.4.23: network target smoothing for remote figures
 
 /* Summer's wardrobe catalogue (2.4.14, moved to module scope in 2.4.19):
    high-class goth emo princess — 6 gowns, 5 shoes, 5 makeup, 6 hairstyles,
@@ -2137,6 +2138,168 @@ export function createWorld(opts) {
   const whoIsLoggedIn = opts.whoIsLoggedIn || (() => null);
   let loggedIn = whoIsLoggedIn();
 
+  /* ------------ live together (2.4.23) — remote guests + remote her ----
+     A guest who is online on ANOTHER phone is drawn here from the
+     network: their phone sends where they are a few times a second,
+     and this phone glides them there with the same followStep() as a
+     local walk. A guest's avatar exists here when they are the one
+     logged in on THIS device (2.4.22) OR when they are present in the
+     live session — setLoggedIn() below keeps remote avatars alive.
+     Aimmianna, when this phone is not hosting her, is driven the same
+     way from the host phone's her-pos stream, and her local movement
+     (paths, routines, the Moon Cart) pauses while the host drives her.
+     Room jumps (> 8 units at once) never glide through walls: the
+     figure fades out, is placed, and fades back in. */
+  const remoteTargets = { autumn: null, summer: null, tony: null };
+  const remotePrev = { autumn: null, summer: null, tony: null };
+  const remotePresent = { autumn: false, summer: false, tony: false };
+  const remotePlaced = { autumn: false, summer: false, tony: false };
+  let herRemote = null; // {x, z, hd, mv, pose, room, at} from the host, or null
+  let herRemotePrev = null;
+
+  // One fade state per figure: k 1 = fully visible, 0 = invisible.
+  // Materials are collected lazily from the loaded model and only
+  // flipped transparent while a fade is actually running, so normal
+  // rendering stays exactly as before.
+  function fadeState(g) { return g.fade || (g.fade = { k: 1, dir: 0, mats: null, after: null }); }
+  function collectFadeMats(root) {
+    const set = new Set();
+    root.traverse((o) => { if (o.isMesh) { const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach((m) => { if (m) set.add(m); }); } });
+    return [...set];
+  }
+  function stepFade(root, g, dt) {
+    const f = fadeState(g);
+    if (!f.dir) return;
+    f.k = Math.min(1, Math.max(0, f.k + f.dir * dt / 0.35));
+    if (!f.mats || !f.mats.length) f.mats = collectFadeMats(root);
+    for (const m of f.mats) { m.transparent = f.k < 1; m.opacity = f.k; }
+    if ((f.dir < 0 && f.k <= 0) || (f.dir > 0 && f.k >= 1)) {
+      f.dir = 0;
+      if (f.k >= 1 && f.mats) for (const m of f.mats) { m.transparent = false; m.opacity = 1; }
+      const after = f.after; f.after = null;
+      if (after) after();
+    }
+  }
+  function startFadeOut(g, after) {
+    const f = fadeState(g);
+    f.after = after || null;
+    if (f.k <= 0) { f.dir = 0; const a = f.after; f.after = null; if (a) a(); return; }
+    f.dir = -1;
+  }
+  function startFadeIn(g) { const f = fadeState(g); if (f.k >= 1) { f.dir = 0; return; } f.dir = 1; }
+  function guestStateFor(who) { return who === "autumn" ? guest : who === "summer" ? summer : tony; }
+
+  // Drive one remote guest one frame: glide toward the network target
+  // with the 0.1 s velocity look-ahead, exactly like a local walk.
+  // Frozen mid-fade (the fade owns the figure then).
+  function stepRemoteGuest(who, g, dt) {
+    const t = remoteTargets[who];
+    const f = fadeState(g);
+    if (!t || f.dir !== 0 || f.k < 1) { g.moving = false; return; }
+    if (!remotePlaced[who]) {
+      // First sight of them: appear where they are (the fade-in covers it).
+      g.pos.x = t.x; g.pos.z = t.z; g.heading = t.hd || 0;
+      remotePlaced[who] = true; g.moving = false; g.remotePose = t.pose; g.remoteSkating = t.pose === "skate";
+      return;
+    }
+    const look = remoteLookahead(remotePrev[who], t);
+    const step = followStep(g.pos.x, g.pos.z, look.x, look.z, dt, her.speed);
+    if (step.snapped) { g.pos.x = step.x; g.pos.z = step.z; g.moving = false; }
+    else {
+      if (step.moving) g.heading = Math.atan2(look.x - g.pos.x, look.z - g.pos.z);
+      g.pos.x = step.x; g.pos.z = step.z; g.moving = step.moving;
+    }
+    g.remotePose = t.pose; g.remoteSkating = t.pose === "skate";
+  }
+  // The walk/idle clip for a figure: standing on a board is a stance,
+  // not a stride — "skate" plays the idle clip while gliding.
+  function guestMotionName(g) { return g.remoteSkating ? "idle" : (g.moving ? "walk" : "idle"); }
+
+  // A new network sample for a remote guest. A jump over 8 units is a
+  // room change, not a walk: fade out, place, fade in.
+  function setRemoteTarget(who, s) {
+    if (!remoteTargets.hasOwnProperty(who) || who === loggedIn) return;
+    const g = guestStateFor(who);
+    remotePrev[who] = remoteTargets[who];
+    remoteTargets[who] = { x: s.x, z: s.z, hd: s.hd || 0, mv: s.mv ? 1 : 0, pose: s.pose || "idle", room: s.room || "living", at: s.at || Date.now() };
+    const av = liveGuestAvatar(who);
+    if (!av || !av.model || !remotePlaced[who]) return; // not here yet: placed on arrival
+    const d = Math.hypot(s.x - g.pos.x, s.z - g.pos.z);
+    if (d > 8) {
+      startFadeOut(g, () => { g.pos.x = s.x; g.pos.z = s.z; g.heading = s.hd || 0; remotePrev[who] = null; startFadeIn(g); });
+    }
+  }
+
+  function tearDownRemoteGuest(who) {
+    // Guard: a quick rejoin (setRemotePresent true) before this deferred
+    // teardown runs must not free the avatar that just came back.
+    if (remotePresent[who]) return;
+    const av = liveGuestAvatar(who);
+    if (!av) return;
+    const g = guestStateFor(who);
+    const f = fadeState(g); f.mats = null; f.k = 1; f.dir = 0; f.after = null;
+    disposeGuestAvatar(av);
+    if (who === "autumn") guestAvatar = null;
+    else if (who === "summer") summerAvatar = null;
+    else tonyAvatar = null;
+  }
+
+  // Someone joined / left the live session on another phone. Joining
+  // builds their avatar (one at a time, same lazy queue as a login);
+  // leaving fades them out and frees the model.
+  function setRemotePresent(who, on) {
+    if (!remoteTargets.hasOwnProperty(who) || who === loggedIn) return;
+    remotePresent[who] = !!on;
+    const g = guestStateFor(who);
+    if (on) {
+      const av = liveGuestAvatar(who);
+      if (!av) {
+        if (who === "autumn") guestAvatar = makeAutumnAvatar();
+        else if (who === "summer") summerAvatar = makeSummerAvatar();
+        else tonyAvatar = makeTonyAvatar();
+        const f = fadeState(g); f.k = 0; f.dir = 0; f.mats = null; // arrive faded in
+        remotePlaced[who] = false;
+        loadGuestsSequentially();
+      } else if (av.model) {
+        startFadeIn(g);
+      }
+    } else {
+      remoteTargets[who] = null; remotePrev[who] = null; remotePlaced[who] = false;
+      const av = liveGuestAvatar(who);
+      if (!av) return;
+      // The fade-out finishes inside the world's tick, and the rest of
+      // that tick still uses the avatar — so the teardown itself waits
+      // for a microtask (just after the tick returns), instead of
+      // nulling the avatar mid-frame and crashing the block below.
+      if (av.model) startFadeOut(g, () => queueMicrotask(() => tearDownRemoteGuest(who)));
+      else tearDownRemoteGuest(who); // built but never landed: drop the build
+    }
+  }
+
+  // Aimmianna's remote position, from the host phone. null = this phone
+  // drives her locally again (we are the host, or live is off).
+  function setLiveHer(s) {
+    if (!s) {
+      if (herRemote) { herRemote = null; herRemotePrev = null; }
+      return;
+    }
+    const first = !herRemote;
+    if (first) {
+      // Local movement stops now — her path, and any arrival waiting on it.
+      her.path = [];
+      if (her.arriveCb) { const cb = her.arriveCb; her.arriveCb = null; cb(false); }
+      try { if (cart.driving) builderDrive("out"); } catch (e) {}
+    }
+    herRemotePrev = herRemote;
+    herRemote = { x: s.x, z: s.z, hd: s.hd || 0, mv: s.mv ? 1 : 0, pose: s.pose || "idle", room: s.room || "living", at: s.at || Date.now() };
+    if (!first && herRemotePrev) {
+      const d = Math.hypot(s.x - her.pos.x, s.z - her.pos.z);
+      if (d > 8) {
+        startFadeOut(her, () => { her.pos.x = s.x; her.pos.z = s.z; her.heading = s.hd || 0; herRemotePrev = null; startFadeIn(her); });
+      }
+    }
+  }
+
   // Aura discs (2.4.19): a soft glow under each figure's feet — same
   // style for everyone (CircleGeometry 0.5, additive, opacity 0.22,
   // 0.02 above the floor, always on, a child of the figure's group so
@@ -2317,6 +2480,9 @@ export function createWorld(opts) {
         const av = liveGuestAvatar(g.key); // re-read live: a logout mid-load tears it down
         if (!av || av.model || av.modelFailed) continue;
         await av.load(); // load() catches its own failures; a failed guest just stays absent
+        if (liveGuestAvatar(g.key) !== av) continue; // torn down while loading (logout / left live)
+        // 2.4.23: a remote guest arrives faded in, not popped in.
+        if (av.model && remotePresent[g.key]) { const gs = guestStateFor(g.key); fadeState(gs).k = 0; startFadeIn(gs); }
         onStatus(av.model ? g.label + "'s here…" : g.label + " couldn't make it — the rest are still coming…");
         // Breathe between guests so the phone's memory can settle.
         await new Promise((r) => setTimeout(r, 400));
@@ -2324,6 +2490,10 @@ export function createWorld(opts) {
     } finally {
       guestLoadRunning = false;
       onStatus("");
+      // 2.4.23: someone may have joined live while the queue was busy
+      // (two guests at once) — a fresh call would have returned early,
+      // so re-check here instead of dropping them.
+      if (pendingGuestLoads().length) loadGuestsSequentially();
     }
   }
   // Start after the room opens — a short delay so Aimmianna + the first
@@ -2334,12 +2504,15 @@ export function createWorld(opts) {
   // whoever shouldn't, and load anyone newly built — one at a time.
   function setLoggedIn(who) {
     loggedIn = who || null;
+    // 2.4.23: a login change must not tear down a guest who is here
+    // because they are present in the live session — only the local
+    // avatar follows the login; remote ones follow the roster.
     if (loggedIn === "autumn" && !guestAvatar) guestAvatar = makeAutumnAvatar();
-    else if (loggedIn !== "autumn" && guestAvatar) { disposeGuestAvatar(guestAvatar); guestAvatar = null; }
+    else if (loggedIn !== "autumn" && guestAvatar && !remotePresent.autumn) { disposeGuestAvatar(guestAvatar); guestAvatar = null; }
     if (loggedIn === "summer" && !summerAvatar) summerAvatar = makeSummerAvatar();
-    else if (loggedIn !== "summer" && summerAvatar) { disposeGuestAvatar(summerAvatar); summerAvatar = null; }
+    else if (loggedIn !== "summer" && summerAvatar && !remotePresent.summer) { disposeGuestAvatar(summerAvatar); summerAvatar = null; }
     if (loggedIn === "tony" && !tonyAvatar) tonyAvatar = makeTonyAvatar();
-    else if (loggedIn !== "tony" && tonyAvatar) { disposeGuestAvatar(tonyAvatar); tonyAvatar = null; }
+    else if (loggedIn !== "tony" && tonyAvatar && !remotePresent.tony) { disposeGuestAvatar(tonyAvatar); tonyAvatar = null; }
     loadGuestsSequentially();
   }
   function getGuests() {
@@ -2793,6 +2966,9 @@ export function createWorld(opts) {
     tagged(g, "builderVehicle");
   })();
   function builderDrive(action) {
+    // 2.4.23 live: driving the cart owns her position — on a non-host
+    // phone the host owns it instead, so driving waits.
+    if (action === "in" && herRemote) return { ok: false, error: "the host is driving her right now" };
     if (action === "in") {
       if (cart.driving) return { ok: false, error: "already driving" };
       skateStop(); // riding and driving can't both own her position
@@ -2995,6 +3171,10 @@ export function createWorld(opts) {
     if (!g.path.length && g.arriveCb) { const cb = g.arriveCb; g.arriveCb = null; cb(true); }
   }
   function goToSpot(name) {
+    // 2.4.23 live: on a non-host phone her movement comes from the host
+    // — local paths (routines, chat tools, taps) wait instead of
+    // fighting the stream. The caller gets a plain false, not a hang.
+    if (herRemote) return Promise.resolve(false);
     const s = SPOTS[name]; if (!s) return Promise.resolve(false);
     return new Promise((resolve) => {
       if (her.arriveCb) her.arriveCb(false);
@@ -3005,6 +3185,7 @@ export function createWorld(opts) {
     });
   }
   function goToPoint(x, z) {
+    if (herRemote) return Promise.resolve(false); // 2.4.23: host drives her
     const p = clampWalkPoint(x, z);
     x = p.x; z = p.z;
     if (her.arriveCb) her.arriveCb(false);
@@ -3017,6 +3198,7 @@ export function createWorld(opts) {
     return goToSpot(main);
   }
   function placeAt(name) {
+    if (herRemote) return; // 2.4.23: host drives her
     const s = SPOTS[name]; if (!s) return;
     her.pos.set(s.x, 0, s.z); her.path = []; her.spot = name; her.pose = s.pose || null; her.room = s.room;
     avatar.object3d.position.copy(her.pos);
@@ -3215,7 +3397,21 @@ export function createWorld(opts) {
 
     // walking
     her.moveDir = 0;
-    if (her.path.length) {
+    if (herRemote) {
+      // 2.4.23 live: the host phone drives her — glide toward the
+      // host's stream with the same followStep as a local walk.
+      // Frozen mid-fade (a room jump owns her then).
+      const hf = fadeState(her);
+      if (hf.dir === 0 && hf.k >= 1) {
+        const look = remoteLookahead(herRemotePrev, herRemote);
+        const hStep = followStep(her.pos.x, her.pos.z, look.x, look.z, dt, her.speed);
+        if (hStep.snapped) { her.pos.x = hStep.x; her.pos.z = hStep.z; }
+        else {
+          if (hStep.moving) her.heading = Math.atan2(look.x - her.pos.x, look.z - her.pos.z);
+          her.pos.x = hStep.x; her.pos.z = hStep.z;
+        }
+      }
+    } else if (her.path.length) {
       const target = her.path[0];
       tmp.subVectors(target, her.pos); tmp.y = 0;
       const d = tmp.length();
@@ -3248,6 +3444,7 @@ export function createWorld(opts) {
       her.pos.y += (gy - her.pos.y) * Math.min(1, dt * 8);
       if (Math.abs(gy - her.pos.y) < 0.005) her.pos.y = gy;
     }
+    stepFade(avatar.object3d, her, dt); // 2.4.23: room-jump fade for her
     avatar.object3d.position.copy(her.pos);
     const nowRoom = roomAt(her.pos.x, her.pos.z);
     if (nowRoom !== lastRoom) { lastRoom = nowRoom; her.room = nowRoom; onRoomChange(nowRoom); }
@@ -3264,6 +3461,9 @@ export function createWorld(opts) {
     else if (stereoState.on) mode = "dance";
     else if (her.talking) mode = "talk";
     else mode = her.activity || "idle";
+    // 2.4.23 live: on a non-host phone her pose comes from the host —
+    // the local pose override, activity and talk flags don't drive her.
+    if (herRemote) mode = herRemote.mv ? "walk" : (herRemote.pose || "idle");
     her.mode = mode;
     const lamp = roomLights[nowRoom];
     const lit = LAMP_MODES[lamp.mode].i ? 1 : 0.72;
@@ -3275,6 +3475,7 @@ export function createWorld(opts) {
     // exception is riding: on a board with Aimmianna, they ride together
     // beside her, as before.
     if (guestAvatar && guestAvatar.model && guestAvatar.group.visible) {
+      stepFade(guestAvatar.group, guest, dt); // 2.4.23: room-jump / join / leave fade
       if (skate.riders.has("autumn")) {
         const sideX = Math.cos(her.heading), sideZ = -Math.sin(her.heading);
         guestTmp.set(her.pos.x + sideX * 0.55, 0, her.pos.z + sideZ * 0.55);
@@ -3283,6 +3484,10 @@ export function createWorld(opts) {
         const gStep = followStep(guest.pos.x, guest.pos.z, guestTmp.x, guestTmp.z, dt, her.speed);
         if (gStep.moving) guest.heading = Math.atan2(guestTmp.x - guest.pos.x, guestTmp.z - guest.pos.z);
         guest.pos.x = gStep.x; guest.pos.z = gStep.z; guest.moving = gStep.moving;
+      } else if (remoteTargets.autumn) {
+        // 2.4.23 live: she's online on another phone — glide toward
+        // the network target instead of walking her own path.
+        stepRemoteGuest("autumn", guest, dt);
       } else {
         stepGuestPath(guest, dt);
       }
@@ -3298,15 +3503,16 @@ export function createWorld(opts) {
         guest.emoteLeft -= dt;
         if (guest.emoteLeft <= 0) {
           if (guest.heartPending) { guest.heartPending = false; guestEmote("heart_pose"); }
-          else guestAvatar.playMotion(guest.moving ? "walk" : "idle");
+          else guestAvatar.playMotion(guestMotionName(guest));
         }
       } else {
-        guestAvatar.playMotion(guest.moving ? "walk" : "idle");
+        guestAvatar.playMotion(guestMotionName(guest));
       }
-      // Face where she's going; when still, face Aimmianna.
+      // Face where she's going; when still, face Aimmianna — or, live,
+      // where her phone says she's facing.
       const wantYaw = guest.moving || guest.emoteLeft > 0
         ? guest.heading
-        : Math.atan2(her.pos.x - guest.pos.x, her.pos.z - guest.pos.z);
+        : (remoteTargets.autumn ? remoteTargets.autumn.hd : Math.atan2(her.pos.x - guest.pos.x, her.pos.z - guest.pos.z));
       const dyaw = Math.atan2(Math.sin(wantYaw - guestAvatar.group.rotation.y), Math.cos(wantYaw - guestAvatar.group.rotation.y));
       guestAvatar.group.rotation.y += dyaw * (1 - Math.exp(-dt * 9));
       guestAvatar.group.position.copy(guest.pos);
@@ -3317,6 +3523,7 @@ export function createWorld(opts) {
     // auto-follow; riding together is the only exception. She has no
     // idle clip, so her idle is a procedural breathing bob — never frozen.
     if (summerAvatar && summerAvatar.model && summerAvatar.group.visible) {
+      stepFade(summerAvatar.group, summer, dt); // 2.4.23: room-jump / join / leave fade
       if (!summerWardrobeApplied) { summerWardrobeApplied = true; applySummerWardrobe(); }
       if (skate.riders.has("summer")) {
         const sSideX = -Math.cos(her.heading), sSideZ = Math.sin(her.heading);
@@ -3325,6 +3532,10 @@ export function createWorld(opts) {
         const sStep = followStep(summer.pos.x, summer.pos.z, summerTmp.x, summerTmp.z, dt, her.speed);
         if (sStep.moving) summer.heading = Math.atan2(summerTmp.x - summer.pos.x, summerTmp.z - summer.pos.z);
         summer.pos.x = sStep.x; summer.pos.z = sStep.z; summer.moving = sStep.moving;
+      } else if (remoteTargets.summer) {
+        // 2.4.23 live: she's online on another phone — glide toward
+        // the network target instead of walking her own path.
+        stepRemoteGuest("summer", summer, dt);
       } else {
         stepGuestPath(summer, dt);
       }
@@ -3340,15 +3551,16 @@ export function createWorld(opts) {
         summer.emoteLeft -= dt;
         if (summer.emoteLeft <= 0) {
           if (summer.heartPending) { summer.heartPending = false; summerEmote("heart_pose"); }
-          else summerAvatar.playMotion(summer.moving ? "walk" : "idle");
+          else summerAvatar.playMotion(guestMotionName(summer));
         }
       } else {
-        summerAvatar.playMotion(summer.moving ? "walk" : "idle");
+        summerAvatar.playMotion(guestMotionName(summer));
       }
-      // Face where she's going; when still, face Aimmianna.
+      // Face where she's going; when still, face Aimmianna — or, live,
+      // where her phone says she's facing.
       const sWantYaw = summer.moving || summer.emoteLeft > 0
         ? summer.heading
-        : Math.atan2(her.pos.x - summer.pos.x, her.pos.z - summer.pos.z);
+        : (remoteTargets.summer ? remoteTargets.summer.hd : Math.atan2(her.pos.x - summer.pos.x, her.pos.z - summer.pos.z));
       const sDyaw = Math.atan2(Math.sin(sWantYaw - summerAvatar.group.rotation.y), Math.cos(sWantYaw - summerAvatar.group.rotation.y));
       summerAvatar.group.rotation.y += sDyaw * (1 - Math.exp(-dt * 9));
       // Procedural breathing idle: a gentle rise and fall while she
@@ -3363,6 +3575,7 @@ export function createWorld(opts) {
     // together is the only exception. He has a real idle clip, so no
     // procedural idle is needed here.
     if (tonyAvatar && tonyAvatar.model && tonyAvatar.group.visible) {
+      stepFade(tonyAvatar.group, tony, dt); // 2.4.23: room-jump / join / leave fade
       if (skate.riders.has("tony")) {
         const tFwdX = Math.sin(her.heading), tFwdZ = Math.cos(her.heading);
         tonyTmp.set(her.pos.x + tFwdX * 0.55, 0, her.pos.z + tFwdZ * 0.55);
@@ -3370,6 +3583,10 @@ export function createWorld(opts) {
         const tStep = followStep(tony.pos.x, tony.pos.z, tonyTmp.x, tonyTmp.z, dt, her.speed);
         if (tStep.moving) tony.heading = Math.atan2(tonyTmp.x - tony.pos.x, tonyTmp.z - tony.pos.z);
         tony.pos.x = tStep.x; tony.pos.z = tStep.z; tony.moving = tStep.moving;
+      } else if (remoteTargets.tony) {
+        // 2.4.23 live: he's online on another phone — glide toward
+        // the network target instead of walking his own path.
+        stepRemoteGuest("tony", tony, dt);
       } else {
         stepGuestPath(tony, dt);
       }
@@ -3385,15 +3602,16 @@ export function createWorld(opts) {
         tony.emoteLeft -= dt;
         if (tony.emoteLeft <= 0) {
           if (tony.heartPending) { tony.heartPending = false; tonyEmote("heart_pose"); }
-          else tonyAvatar.playMotion(tony.moving ? "walk" : "idle");
+          else tonyAvatar.playMotion(guestMotionName(tony));
         }
       } else {
-        tonyAvatar.playMotion(tony.moving ? "walk" : "idle");
+        tonyAvatar.playMotion(guestMotionName(tony));
       }
-      // Face where he's going; when still, face Aimmianna.
+      // Face where he's going; when still, face Aimmianna — or, live,
+      // where his phone says he's facing.
       const tWantYaw = tony.moving || tony.emoteLeft > 0
         ? tony.heading
-        : Math.atan2(her.pos.x - tony.pos.x, her.pos.z - tony.pos.z);
+        : (remoteTargets.tony ? remoteTargets.tony.hd : Math.atan2(her.pos.x - tony.pos.x, her.pos.z - tony.pos.z));
       const tDyaw = Math.atan2(Math.sin(tWantYaw - tonyAvatar.group.rotation.y), Math.cos(tWantYaw - tonyAvatar.group.rotation.y));
       tonyAvatar.group.rotation.y += tDyaw * (1 - Math.exp(-dt * 9));
       tonyAvatar.group.position.copy(tony.pos);
@@ -3558,11 +3776,23 @@ export function createWorld(opts) {
     // changes, send one guest walking on their own path, and say who
     // the camera is following (her by default).
     setLoggedIn, walkGuest, getFollowed: () => cam.followWho || "aimmianna",
+    // 2.4.23 — live together: remote targets + presence for guests
+    // online on other phones, and her remote position from the host.
+    // setRemotePresent builds/frees a guest's avatar as they join or
+    // leave the live session; setRemoteTarget glides them; setLiveHer
+    // drives Aimmianna from the host (null = local control again).
+    setRemoteTarget, setRemotePresent, setLiveHer,
+    getRemotePresent: () => ({ ...remotePresent }),
+    getLiveHer: () => herRemote ? { ...herRemote } : null,
+    // 2.4.23: room lookup for the live position stream.
+    roomAt,
     moveLifePlayer, moveLifeToSpot,
     getAvatarRepresentation: () => avatar.representation || "portrait",
     getAvatarMotion: () => avatar.motionState || null,
     goToSpot, goToPoint, goToRoom, placeAt,
-    getHer: () => ({ room: roomAt(her.pos.x, her.pos.z), spot: her.spot, walking: her.path.length > 0, pose: her.pose, mode: her.mode || "idle", poseOverride: poseOverride && Date.now() < poseOverrideUntil ? poseOverride : null }),
+    // 2.4.23: pos + heading join getHer so the host phone can send her
+    // live position (her-pos) to the room.
+    getHer: () => ({ room: roomAt(her.pos.x, her.pos.z), spot: her.spot, walking: her.path.length > 0, pose: her.pose, mode: her.mode || "idle", poseOverride: poseOverride && Date.now() < poseOverrideUntil ? poseOverride : null, pos: { x: +her.pos.x.toFixed(2), z: +her.pos.z.toFixed(2) }, heading: +her.heading.toFixed(2) }),
     setPose, clearPose: () => setPose(null),
     // Autumn, the first guest avatar (2.4.13): lives in the shared
     // apartment only. guestEmote plays one of her clips (hug, heart_pose,
@@ -3570,7 +3800,7 @@ export function createWorld(opts) {
     // 2.4.22: guests arrive lazily, one at a time after the room opens
     // (loadGuestsSequentially) — getGuests reports who is here yet.
     guestEmote, loadGuests: loadGuestsSequentially, getGuests,
-    getGuest: () => ({ ready: !!(guestAvatar && guestAvatar.model), failed: !!(guestAvatar && guestAvatar.modelFailed), mode: (guestAvatar && guestAvatar.motion) || null, moving: guest.moving, pos: { x: +guest.pos.x.toFixed(2), z: +guest.pos.z.toFixed(2) } }),
+    getGuest: () => ({ ready: !!(guestAvatar && guestAvatar.model), failed: !!(guestAvatar && guestAvatar.modelFailed), mode: (guestAvatar && guestAvatar.motion) || null, moving: guest.moving, pos: { x: +guest.pos.x.toFixed(2), z: +guest.pos.z.toFixed(2) }, heading: +guest.heading.toFixed(2) }),
     // Summer, the second guest avatar (2.4.14): same shared-side-only
     // rules as Autumn, 1.78 units (5'5", the anchor of the 2.4.17 balance).
     // Her idle is procedural (no idle clip in her file); greet_04 is
@@ -3578,7 +3808,7 @@ export function createWorld(opts) {
     // goth emo princess wardrobe — outfits, shoes, makeup, hairstyles,
     // hair dye — shared side only, no private wiring of any kind.
     summerEmote,
-    getSummer: () => ({ ready: !!(summerAvatar && summerAvatar.model), failed: !!(summerAvatar && summerAvatar.modelFailed), mode: (summerAvatar && summerAvatar.motion) || null, moving: summer.moving, pos: { x: +summer.pos.x.toFixed(2), z: +summer.pos.z.toFixed(2) } }),
+    getSummer: () => ({ ready: !!(summerAvatar && summerAvatar.model), failed: !!(summerAvatar && summerAvatar.modelFailed), mode: (summerAvatar && summerAvatar.motion) || null, moving: summer.moving, pos: { x: +summer.pos.x.toFixed(2), z: +summer.pos.z.toFixed(2) }, heading: +summer.heading.toFixed(2) }),
     setSummerWardrobe,
     getSummerWardrobe: () => ({ picks: { ...summerWardrobe }, catalogue: SUMMER_WARDROBE }),
     // Aura circles (2.4.19): one glow disc under each of the four
@@ -3598,7 +3828,7 @@ export function createWorld(opts) {
     // only. greet_01 is his hello wave; his file has a real idle clip,
     // so no procedural idle is needed here.
     tonyEmote,
-    getTony: () => ({ ready: !!(tonyAvatar && tonyAvatar.model), failed: !!(tonyAvatar && tonyAvatar.modelFailed), mode: (tonyAvatar && tonyAvatar.motion) || null, moving: tony.moving, pos: { x: +tony.pos.x.toFixed(2), z: +tony.pos.z.toFixed(2) } }),
+    getTony: () => ({ ready: !!(tonyAvatar && tonyAvatar.model), failed: !!(tonyAvatar && tonyAvatar.modelFailed), mode: (tonyAvatar && tonyAvatar.motion) || null, moving: tony.moving, pos: { x: +tony.pos.x.toFixed(2), z: +tony.pos.z.toFixed(2) }, heading: +tony.heading.toFixed(2) }),
     // Skate park (2.4.20): skateStart rides (Aimmianna always rides
     // along), skateTrick pops ollie / kickflip / grind / air, skateSetGear
     // applies the saved board or skates design, getSkate reports the
