@@ -5,7 +5,13 @@
      skin is always left alone), keeping the original folds and shading;
    - optional real 3D pieces (skirts, dresses, floor gowns, underlayers, lace
      trims, a witch hat, a vampire collar, a belt flashlight) are built here
-     and skinned to her skeleton so they move when she walks. */
+     and skinned to her skeleton so they move when she walks.
+   2.4.22: every outfit's bottom and shoes now read as DIFFERENT from the
+   others — distinct deep tones in the goth palette (deep red, violet, navy,
+   forest, plum, gold, cream) instead of a wall of near-black #0d0b0f–#121216
+   bottoms and shoes, which is why only the top seemed to change on her
+   phone. Tops are untouched. Skirt colours are deepened the same way, and
+   a few outfits that suit it gained a skirt (hoodies, knits, flannels). */
 import * as THREE from "./vendor/three.module.min.js";
 const BODY = {"cx":0.005,"cz":0.06,"ys":[0.6,0.58,0.56,0.54,0.52,0.5,0.48,0.46,0.44,0.42,0.4,0.38,0.36,0.34,0.32,0.3],"r":[[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.067,0.0,0.0,0.0,0.049,0.0,0.043,0.039,0.039,0.039,0.042,0.042,0.049,0.049,0.056,0.056,0.062,0.066,0.067,0.072,0.076,0.077,0.077,0.078,0.079,0.079,0.08,0.08,0.079,0.075,0.075,0.072],[0.069,0.069,0.065,0.06,0.055,0.051,0.047,0.044,0.042,0.043,0.046,0.048,0.052,0.056,0.059,0.063,0.063,0.064,0.069,0.072,0.073,0.075,0.077,0.078,0.079,0.079,0.078,0.079,0.079,0.076,0.075,0.071],[0.073,0.072,0.067,0.067,0.056,0.056,0.047,0.043,0.042,0.042,0.051,0.051,0.057,0.064,0.065,0.065,0.067,0.069,0.073,0.074,0.077,0.078,0.078,0.079,0.08,0.08,0.08,0.081,0.081,0.079,0.077,0.075],[0.078,0.077,0.073,0.07,0.067,0.066,0.053,0.05,0.048,0.048,0.054,0.063,0.063,0.064,0.069,0.071,0.072,0.074,0.075,0.075,0.075,0.077,0.077,0.079,0.08,0.08,0.079,0.08,0.08,0.08,0.08,0.08],[0.085,0.083,0.075,0.07,0.067,0.063,0.053,0.058,0.058,0.054,0.054,0.063,0.063,0.064,0.068,0.078,0.08,0.08,0.08,0.077,0.075,0.075,0.075,0.076,0.077,0.077,0.078,0.079,0.079,0.081,0.085,0.085],[0.087,0.083,0.088,0.088,0.082,0.077,0.073,0.065,0.064,0.069,0.071,0.077,0.082,0.082,0.082,0.078,0.083,0.084,0.083,0.082,0.076,0.073,0.07,0.066,0.069,0.069,0.066,0.076,0.081,0.087,0.089,0.089],[0.092,0.0,0.089,0.089,0.088,0.083,0.077,0.069,0.066,0.073,0.075,0.081,0.084,0.084,0.084,0.0,0.086,0.086,0.084,0.08,0.068,0.058,0.0,0.057,0.059,0.059,0.056,0.0,0.071,0.083,0.087,0.092],[0.094,0.093,0.093,0.091,0.088,0.086,0.076,0.066,0.066,0.07,0.076,0.081,0.086,0.086,0.088,0.088,0.088,0.088,0.084,0.076,0.067,0.059,0.045,0.053,0.055,0.055,0.052,0.052,0.074,0.079,0.0,0.094],[0.094,0.0,0.0,0.09,0.088,0.083,0.071,0.059,0.049,0.048,0.074,0.08,0.082,0.085,0.0,0.089,0.089,0.088,0.08,0.08,0.067,0.06,0.049,0.037,0.037,0.037,0.043,0.052,0.073,0.073,0.087,0.094],[0.093,0.093,0.089,0.085,0.075,0.063,0.039,0.0,0.0,0.033,0.049,0.066,0.072,0.077,0.0,0.088,0.088,0.086,0.083,0.0,0.0,0.052,0.041,0.029,0.012,0.004,0.042,0.042,0.073,0.082,0.082,0.092],[0.09,0.089,0.0,0.0,0.062,0.062,0.038,0.002,0.015,0.027,0.0,0.061,0.065,0.074,0.083,0.083,0.086,0.086,0.078,0.077,0.064,0.05,0.0,0.012,0.012,0.004,0.041,0.053,0.073,0.082,0.082,0.09],[0.087,0.008,0.08,0.075,0.058,0.058,0.039,0.0,0.0,0.031,0.045,0.057,0.067,0.067,0.002,0.0,0.078,0.078,0.072,0.072,0.065,0.058,0.035,0.0,0.0,0.0,0.0,0.045,0.045,0.073,0.082,0.087],[0.082,0.0,0.01,0.066,0.066,0.026,0.026,0.0,0.0,0.0,0.045,0.053,0.064,0.004,0.0,0.0,0.078,0.075,0.072,0.0,0.049,0.049,0.022,0.0,0.0,0.0,0.0,0.036,0.055,0.066,0.073,0.082],[0.079,0.076,0.011,0.066,0.066,0.052,0.038,0.0,0.0,0.031,0.045,0.045,0.007,0.066,0.0,0.07,0.07,0.004,0.0,0.058,0.053,0.038,0.017,0.0,0.0,0.0,0.0,0.031,0.036,0.066,0.066,0.072],[0.076,0.076,0.073,0.069,0.063,0.04,0.04,0.0,0.0,0.029,0.029,0.0,0.061,0.066,0.069,0.07,0.07,0.066,0.059,0.044,0.044,0.017,0.0,0.0,0.0,0.0,0.0,0.0,0.028,0.039,0.061,0.061]]};
 
@@ -14,29 +20,29 @@ const C = (h) => new THREE.Color(h);
 export const OUTFIT_3D = {
   original: null,
   "black-top": { top: ["#121014"] },
-  goth_velvet_dress:   { top: ["#17101a", "velvet"], bottom: ["#0d0b0f", "lace", "#3a2c3c"], shoes: ["#0c0b0d"], skirt: { len: "mini", color: "#160f19", folds: 9, trim: "#2a2030" } },
-  grunge_flannel:      { top: ["#7a1620", "plaid", "#121012"], bottom: ["#34435f", "ripped"], shoes: ["#151313"] },
-  pastel_goth:         { top: ["#e6b3d3", "knit"], bottom: ["#121014", "stripes", "#e8d6ef"], shoes: ["#101012"], skirt: { len: "mini", color: "#c9b4e8", folds: 14, trim: "#121014" } },
-  dark_hoodie:         { top: ["#2a2a31", "knit"], bottom: ["#121216"], shoes: ["#121212"] },
-  burgundy_dress:      { top: ["#5c1022", "velvet"], bottom: ["#120c10"], shoes: ["#0e0c0d"], skirt: { len: "knee", color: "#5a0f20", folds: 10 } },
-  cozy_knit:           { top: ["#d8c4a4", "knit"], bottom: ["#3b3a40"], shoes: ["#5a3d2a"] },
+  goth_velvet_dress:   { top: ["#17101a", "velvet"], bottom: ["#3a1e33", "lace", "#6b3a5a"], shoes: ["#4a0f1c"], skirt: { len: "mini", color: "#3a1e33", folds: 9, trim: "#6b3a5a" } },
+  grunge_flannel:      { top: ["#7a1620", "plaid", "#121012"], bottom: ["#34435f", "ripped"], shoes: ["#6b1a1a"], skirt: { len: "mini", color: "#34435f", folds: 9 } },
+  pastel_goth:         { top: ["#e6b3d3", "knit"], bottom: ["#4a2a5c", "stripes", "#e8d6ef"], shoes: ["#c9b4e8"], skirt: { len: "mini", color: "#c9b4e8", folds: 14, trim: "#121014" } },
+  dark_hoodie:         { top: ["#2a2a31", "knit"], bottom: ["#22352a"], shoes: ["#3f3f46"], skirt: { len: "mini", color: "#22352a", folds: 9 } },
+  burgundy_dress:      { top: ["#5c1022", "velvet"], bottom: ["#5a0f20"], shoes: ["#7a1a2e"], skirt: { len: "knee", color: "#5a0f20", folds: 10 } },
+  cozy_knit:           { top: ["#d8c4a4", "knit"], bottom: ["#3b3a40"], shoes: ["#5a3d2a"], skirt: { len: "knee", color: "#4a3a2e", folds: 9 } },
   streetwear:          { top: ["#141416"], bottom: ["#4a4f36", "cargo"], shoes: ["#e9e6e1"] },
-  goth_corset:         { top: ["#0f0d10", "corset", "#8c1020"], bottom: ["#0f0d10"], shoes: ["#0c0b0d"], skirt: { len: "gown", color: "#120f12", folds: 12, under: "#8c1020" } },
+  goth_corset:         { top: ["#0f0d10", "corset", "#8c1020"], bottom: ["#5a0f1e"], shoes: ["#8c1020"], skirt: { len: "gown", color: "#3a1420", folds: 12, under: "#8c1020" } },
   lounge_satin:        { top: ["#c98f9c", "satin"], bottom: ["#c98f9c", "satin"], shoes: ["#e7c3cb"] },
-  violet_velvet_dress: { top: ["#3d1a5c", "velvet"], bottom: ["#0d0b0f", "lace", "#4b3266"], shoes: ["#0c0b0d"], skirt: { len: "mini", color: "#3a1858", folds: 9, trim: "#1a0e24" } },
-  crimson_emo_hoodie:  { top: ["#8e0f1c", "knit"], bottom: ["#111013", "ripped"], shoes: ["#0f0e10"] },
-  scene_kid_hoodie:    { top: ["#d41c8c", "knit"], bottom: ["#101012"], shoes: ["#101012", "check", "#efefef"] },
-  purple_grunge_flannel: { top: ["#4c1f73", "plaid", "#111014"], bottom: ["#121114", "ripped"], shoes: ["#151313"] },
-  violet_corset_gown:  { top: ["#0f0d10", "corset", "#5d2a8f"], bottom: ["#0f0d10"], shoes: ["#0c0b0d"], skirt: { len: "gown", color: "#120f14", folds: 12, under: "#5d2a8f" } },
-  lilac_pastel_goth:   { top: ["#c3a6e6", "knit"], bottom: ["#101012", "stripes", "#f2eef5"], shoes: ["#0f0f11"], skirt: { len: "mini", color: "#121014", folds: 12, trim: "#c3a6e6" } },
-  midnight_plum_dress: { top: ["#3b1235", "velvet"], bottom: ["#140a13"], shoes: ["#0e0a0d"], skirt: { len: "gown", color: "#3a1134", folds: 11 }, collar: "#e8e0e8" },
-  oxblood_knit:        { top: ["#5a1414", "knit"], bottom: ["#0e0c0e", "lace", "#2b1d22"], shoes: ["#6b4a36", "fuzzy"] },
-  violet_rose_streetwear: { top: ["#4b2470", "roses", "#c04d8e"], bottom: ["#17161a", "cargo"], shoes: ["#7a3fb4"] },
-  gold_trim_satin:     { top: ["#121014", "piping", "#c9a24a"], bottom: ["#121014", "piping", "#c9a24a"], shoes: ["#151316"] },
-  witch_moon:          { top: ["#110f14", "moons", "#bfc6d8"], bottom: ["#0d0c10"], shoes: ["#0c0b0d"], skirt: { len: "gown", color: "#141218", folds: 13, under: "#2c2638", ragged: true }, hat: "#141218" },
-  vampire_gown:        { top: ["#7a0a14", "velvet"], bottom: ["#120a0c"], shoes: ["#0e0a0b"], skirt: { len: "gown", color: "#750a14", folds: 12, trim: "#1a0b0e" }, collar: "#120a0c" },
-  goth_beach:          { top: ["#0d0c0f", "satin"], bottom: ["#dca48e", "fishnet", "#0d0c0f"], shoes: ["#0d0c0f"], skirt: { len: "sarong", color: "#3a2a48", folds: 10, sheer: 0.42 } },
-  ghost_hunter:        { top: ["#5a3626", "leather"], bottom: ["#6a6448", "cargo"], shoes: ["#0f0e0e"], flashlight: true }
+  violet_velvet_dress: { top: ["#3d1a5c", "velvet"], bottom: ["#3a1858", "lace", "#7a4aa8"], shoes: ["#4a2a6a"], skirt: { len: "mini", color: "#3a1858", folds: 9, trim: "#5d2a8f" } },
+  crimson_emo_hoodie:  { top: ["#8e0f1c", "knit"], bottom: ["#5c1022", "ripped"], shoes: ["#8e0f1c"], skirt: { len: "mini", color: "#5c1022", folds: 9 } },
+  scene_kid_hoodie:    { top: ["#d41c8c", "knit"], bottom: ["#2a1a3a"], shoes: ["#6a2a8a", "check", "#efefef"], skirt: { len: "mini", color: "#2a1a3a", folds: 10 } },
+  purple_grunge_flannel: { top: ["#4c1f73", "plaid", "#111014"], bottom: ["#2e1a4a", "ripped"], shoes: ["#4c1f73"], skirt: { len: "mini", color: "#2e1a4a", folds: 9 } },
+  violet_corset_gown:  { top: ["#0f0d10", "corset", "#5d2a8f"], bottom: ["#5d2a8f"], shoes: ["#5d2a8f"], skirt: { len: "gown", color: "#2e1a3e", folds: 12, under: "#5d2a8f" } },
+  lilac_pastel_goth:   { top: ["#c3a6e6", "knit"], bottom: ["#6b4a8a", "stripes", "#f2eef5"], shoes: ["#c3a6e6"], skirt: { len: "mini", color: "#5a3a7a", folds: 12, trim: "#c3a6e6" } },
+  midnight_plum_dress: { top: ["#3b1235", "velvet"], bottom: ["#3b1235"], shoes: ["#7a2a5a"], skirt: { len: "gown", color: "#3a1134", folds: 11 }, collar: "#e8e0e8" },
+  oxblood_knit:        { top: ["#5a1414", "knit"], bottom: ["#3a1a1e", "lace", "#7a3a3a"], shoes: ["#6b4a36", "fuzzy"], skirt: { len: "mini", color: "#3a1a1e", folds: 9 } },
+  violet_rose_streetwear: { top: ["#4b2470", "roses", "#c04d8e"], bottom: ["#3a2a4a", "cargo"], shoes: ["#7a3fb4"] },
+  gold_trim_satin:     { top: ["#121014", "piping", "#c9a24a"], bottom: ["#2a1e2e", "piping", "#c9a24a"], shoes: ["#c9a24a"], skirt: { len: "gown", color: "#2a1e2e", folds: 12, trim: "#c9a24a" } },
+  witch_moon:          { top: ["#110f14", "moons", "#bfc6d8"], bottom: ["#2c2638"], shoes: ["#4a3a5c"], skirt: { len: "gown", color: "#241a30", folds: 13, under: "#2c2638", ragged: true }, hat: "#141218" },
+  vampire_gown:        { top: ["#7a0a14", "velvet"], bottom: ["#750a14"], shoes: ["#b01a28"], skirt: { len: "gown", color: "#750a14", folds: 12, trim: "#1a0b0e" }, collar: "#120a0c" },
+  goth_beach:          { top: ["#0d0c0f", "satin"], bottom: ["#dca48e", "fishnet", "#0d0c0f"], shoes: ["#3a2a48"], skirt: { len: "sarong", color: "#3a2a48", folds: 10, sheer: 0.42 } },
+  ghost_hunter:        { top: ["#5a3626", "leather"], bottom: ["#6a6448", "cargo"], shoes: ["#5a3626"], flashlight: true }
 };
 export const hasOutfit3D = (name) => Object.prototype.hasOwnProperty.call(OUTFIT_3D, name);
 
