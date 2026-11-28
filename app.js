@@ -31,7 +31,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.19";
+const VERSION = "Aimmianna 3D v2.4.20";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -517,20 +517,29 @@ async function composeLook() {
   const gen = ++lookGen;
   const { base, layers } = lookLayers();
   let img;
-  try { img = await loadImg(base); } catch (e) { try { img = await loadImg(BASE_FIGURE); } catch (e2) { return; } }
+  try { img = await loadImg(base); } catch (e) { try { img = await loadImg(BASE_FIGURE); } catch (e2) {
+    // 2.4.20: fail LOUD — the portrait used to stay on the old picture with
+    // no word when both image files failed to come through.
+    if (els.wardrobeMsg) els.wardrobeMsg.textContent = "Her portrait couldn't load — the picture files didn't come through. Close the app fully and reopen it.";
+    return;
+  } }
   const W = img.naturalWidth || 768, H = img.naturalHeight || 1190;
   const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
   const g = cv.getContext("2d"); g.drawImage(img, 0, 0, W, H);
   if (layers.length) {
     const tmp = document.createElement("canvas"); tmp.width = W; tmp.height = H; const t = tmp.getContext("2d");
+    let failedLayers = 0;
     for (const L of layers) {
       try {
         const [li, mi] = await Promise.all([loadImg(L.src), loadImg(L.mask)]);
         t.globalCompositeOperation = "source-over"; t.clearRect(0, 0, W, H); t.drawImage(li, 0, 0, W, H);
         t.globalCompositeOperation = "destination-in"; t.drawImage(mi, 0, 0, W, H);
         g.drawImage(tmp, 0, 0);
-      } catch (e) { /* missing layer: skip it */ }
+      } catch (e) { failedLayers++; /* missing layer: skip it, say so below */ }
     }
+    // 2.4.20: one missing hair/makeup picture used to vanish silently and
+    // read as "half loaded". Name the missing pieces instead.
+    if (failedLayers && els.wardrobeMsg) els.wardrobeMsg.textContent = failedLayers + " piece" + (failedLayers > 1 ? "s" : "") + " of her look didn't load (a hair or makeup picture is missing) — the outfit is showing. Close the app fully and reopen it to retry.";
   }
   if (gen !== lookGen) return;
   if (world) world.setLook(cv);
@@ -548,6 +557,14 @@ function applyFigure() {
   composeLook();
   try { sync3DOutfit(); } catch (e) {}
 }
+// 2.4.20: if the portrait picture itself won't load (stale cache, missing
+// file), fall back to the base figure once, then say so plainly instead of
+// showing a broken-image icon. The check is on the resolved URL, so it
+// never loops on the same failing file.
+if (els.wardrobePreview) els.wardrobePreview.addEventListener("error", () => {
+  if (els.wardrobePreview.src.indexOf(BASE_FIGURE) === -1) els.wardrobePreview.src = BASE_FIGURE;
+  else if (els.wardrobeMsg) els.wardrobeMsg.textContent = "Her portrait picture is missing on this phone — close the app fully and reopen it.";
+});
 const avatarMode = $("avatarMode");
 const avatarOutfit = $("avatarOutfit");
 const avatarWeapon = $("avatarWeapon");
@@ -620,7 +637,7 @@ function lookSummary() {
   if (f) s += " • " + f.label + " foundation";
   return s;
 }
-function refreshWardrobeStatus() { els.wardrobeStatus.textContent = "Wardrobe: " + lookSummary(); }
+function refreshWardrobeStatus() { if (els.wardrobeStatus) els.wardrobeStatus.textContent = "Wardrobe: " + lookSummary(); }
 
 /* ---------------- Summer's wardrobe (2.4.14) ----------------
    High-class goth emo princess — outfits, shoes, makeup, hairstyles
@@ -643,11 +660,20 @@ function summerWardrobeSummary() {
   const w = world?.getSummerWardrobe?.();
   const catalogue = w ? w.catalogue : SUMMER_WARDROBE;
   const picks = w ? w.picks : state.summerWardrobe;
-  const label = (kind) => (catalogue[kind].find((o) => o.id === picks[kind]) || {}).label || picks[kind];
+  // 2.4.20: a broken catalogue must not throw here and take the panel down.
+  const label = (kind) => ((Array.isArray(catalogue[kind]) && catalogue[kind].find((o) => o.id === picks[kind])) || {}).label || picks[kind];
   return "Summer: " + ["outfit", "shoes", "makeup", "hair", "dye"].map(label).join(" • ");
 }
 function refreshSummerWardrobeStatus() {
   if (els.summerWardrobeStatus) els.summerWardrobeStatus.textContent = summerWardrobeSummary();
+}
+// 2.4.20: plain-language failure line for Summer's panel, naming the
+// list that failed instead of leaving it blank.
+function summerListError(kind, why) {
+  const label = { outfit: "gowns", shoes: "shoes", makeup: "makeup", hair: "hairstyles", dye: "hair dye" }[kind] || kind;
+  const msg = "Summer's " + label + " didn't load — " + why + ". Your picks are still saved; close the app fully and reopen it.";
+  if (els.summerWardrobeMsg) els.summerWardrobeMsg.textContent = msg;
+  console.warn(msg);
 }
 function renderSummerWardrobe() {
   // 2.4.19: the lists render from the catalogue even when the 3D world
@@ -656,22 +682,28 @@ function renderSummerWardrobe() {
   // loading". Picks always save; they reach the figure (aura + tint)
   // as soon as the world exists. A plain note says so when the room
   // is still loading, instead of a blank panel.
+  // 2.4.20: each list is built inside its own try/catch and names itself
+  // when it fails — one bad list must never blank the other four.
   const w = world?.getSummerWardrobe?.();
   const catalogue = w ? w.catalogue : SUMMER_WARDROBE;
   const picks = w ? w.picks : state.summerWardrobe;
   SUMMER_WARDROBE_KINDS.forEach(([kind]) => {
     const host = $("summer" + kind[0].toUpperCase() + kind.slice(1) + "List");
-    if (!host) return;
-    host.innerHTML = "";
-    catalogue[kind].forEach((item) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "pick-btn" + (picks[kind] === item.id ? " picked" : "");
-      b.textContent = item.label;
-      b.title = item.desc;
-      b.addEventListener("click", () => setSummerWardrobePick(kind, item.id));
-      host.appendChild(b);
-    });
+    if (!host) { summerListError(kind, "its place on the page is missing"); return; }
+    try {
+      host.innerHTML = "";
+      const items = catalogue[kind];
+      if (!Array.isArray(items) || !items.length) { summerListError(kind, "its data came back empty"); return; }
+      items.forEach((item) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "pick-btn" + (picks[kind] === item.id ? " picked" : "");
+        b.textContent = item.label;
+        b.title = item.desc;
+        b.addEventListener("click", () => setSummerWardrobePick(kind, item.id));
+        host.appendChild(b);
+      });
+    } catch (e) { summerListError(kind, "it broke while loading (" + (e && e.message ? e.message : "unknown error") + ")"); }
   });
   refreshSummerWardrobeStatus();
   let note = $("summerWardrobeNote");
@@ -728,24 +760,43 @@ function resetWardrobe() {
   state.wardrobePicks = [];
   saveState(); applyFigure(); markPickedButtons();
 }
+// 2.4.20: plain-language failure line for the wardrobe panels, so a list
+// that cannot render says so instead of sitting blank (which reads as
+// "wardrobe not loading"). Written to the panel's status line and the log.
+function wardrobeListError(what, why) {
+  const msg = "Couldn't load " + what + " — " + why + ". Close the app fully and reopen it; if it still won't load, tell Muse which list it was.";
+  if (els.wardrobeMsg) els.wardrobeMsg.textContent = msg;
+  console.warn(msg);
+}
 function buildPickList(elId, choices, kind) {
   const box = $(elId);
-  if (!box) return; // 2.4.19: a missing host used to throw and kill the whole module
+  // 2.4.20: fail LOUD — a missing host or empty data used to leave a list
+  // silently blank. Name the list that failed.
+  if (!box) { wardrobeListError("the " + kind + " list", "its place on the page is missing"); return; }
   box.innerHTML = "";
+  if (!Array.isArray(choices) || !choices.length) { wardrobeListError("the " + kind + " list", "its data came back empty"); return; }
+  let failed = 0;
   choices.forEach((c) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.dataset.kind = kind; b.dataset.id = c.id;
-    const name = document.createElement("span"); name.textContent = c.label;
-    const desc = document.createElement("span"); desc.className = "pick-desc"; desc.textContent = c.desc;
-    b.appendChild(name); b.appendChild(desc);
-    b.addEventListener("click", () => {
-      markManualStyle();
-      if (MAKEUP_KINDS.indexOf(kind) !== -1 && state.wardrobe[kind] === c.id) { setWardrobePick(kind, "", "", c.label + " off."); return; }
-      setWardrobePick(kind, c.id, c.file, (kind === "outfit" ? "Outfit: " : kind === "hair" ? "Hair: " : "") + c.label + ". " + (kind === "outfit" ? "Looking good, huh?" : kind === "hair" ? "Love it." : "Cute."));
-      if (world && kind === "outfit") world.goToSpot("vanity");
-    });
-    box.appendChild(b);
+    try {
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.kind = kind; b.dataset.id = c.id;
+      const name = document.createElement("span"); name.textContent = c.label;
+      const desc = document.createElement("span"); desc.className = "pick-desc"; desc.textContent = c.desc;
+      b.appendChild(name); b.appendChild(desc);
+      b.addEventListener("click", () => {
+        markManualStyle();
+        if (MAKEUP_KINDS.indexOf(kind) !== -1 && state.wardrobe[kind] === c.id) { setWardrobePick(kind, "", "", c.label + " off."); return; }
+        setWardrobePick(kind, c.id, c.file, (kind === "outfit" ? "Outfit: " : kind === "hair" ? "Hair: " : "") + c.label + ". " + (kind === "outfit" ? "Looking good, huh?" : kind === "hair" ? "Love it." : "Cute."));
+        if (world && kind === "outfit") world.goToSpot("vanity");
+      });
+      box.appendChild(b);
+    } catch (e) { failed++; console.warn("Wardrobe item failed:", kind, c && c.id, e); }
   });
+  if (failed) {
+    const p = document.createElement("p"); p.className = "wardrobe-note";
+    p.textContent = failed + " " + kind + " item" + (failed > 1 ? "s" : "") + " couldn't load — the rest are below.";
+    box.appendChild(p);
+  }
 }
 function markPickedButtons() {
   document.querySelectorAll(".pick-list button").forEach((b) => b.classList.toggle("picked", state.wardrobe[b.dataset.kind] === b.dataset.id));
@@ -823,7 +874,13 @@ function itemCard(kind, c) {
   if (state.wardrobe[kind] === c.id) b.classList.add("wearing");
   if (tryOn && tryOn.kind === kind && tryOn.id === c.id) b.classList.add("trying");
   const th = document.createElement("span"); th.className = "closet-thumb " + thumbClass(kind);
-  th.style.backgroundImage = "url('" + ASSETS + c.file + "')";
+  // 2.4.20: a real <img> with an error fallback, not a CSS background.
+  // A background image that 404s fails silently and the card looks blank
+  // ("half loaded"); a failed <img> is removed and the card keeps its
+  // name, rarity and tap-to-try-on, with a "?" placeholder instead.
+  const im = document.createElement("img"); im.alt = ""; im.loading = "lazy"; im.src = ASSETS + c.file;
+  im.addEventListener("error", () => { im.remove(); th.classList.add("thumb-missing"); });
+  th.appendChild(im);
   const name = document.createElement("span"); name.className = "closet-name"; name.textContent = c.label;
   const tag = document.createElement("span"); tag.className = "closet-rarity"; tag.textContent = RARITY[r].label + (kind !== "outfit" && kind !== "hair" ? " · " + MAKEUP_NAMES[kind] : "");
   b.append(th, name, tag);
@@ -894,7 +951,8 @@ function renderSavedLooks(box) {
   const grid = document.createElement("div"); grid.className = "closet-grid";
   looks.forEach((l, i) => {
     const o = byId(OUTFITS, l.w.outfit), card = document.createElement("div"); card.className = "closet-item look-card";
-    const th = document.createElement("span"); th.className = "closet-thumb th-outfit"; if (o) th.style.backgroundImage = "url('" + ASSETS + o.file + "')";
+    const th = document.createElement("span"); th.className = "closet-thumb th-outfit";
+    if (o) { const im = document.createElement("img"); im.alt = ""; im.loading = "lazy"; im.src = ASSETS + o.file; im.addEventListener("error", () => { im.remove(); th.classList.add("thumb-missing"); }); th.appendChild(im); }
     const name = document.createElement("span"); name.className = "closet-name"; name.textContent = l.name;
     const sub = document.createElement("span"); sub.className = "closet-rarity"; sub.textContent = o ? o.label : "Usual outfit";
     const wear = document.createElement("button"); wear.type = "button"; wear.textContent = "Wear";
@@ -940,19 +998,34 @@ function renderBook(box) {
   box.appendChild(p);
 }
 function renderCloset() {
-  if (!closetEl) return;
-  closetEl.innerHTML = "";
-  closetEl.appendChild(closetTabsEl());
-  if (tryOn) closetEl.appendChild(tryOnBar());
-  const box = document.createElement("div"); box.className = "closet-body";
-  if (closetTab === "looks") renderSavedLooks(box);
-  else if (closetTab === "book") renderBook(box);
-  else {
-    const grid = document.createElement("div"); grid.className = "closet-grid";
-    closetItems(closetTab).forEach((it) => grid.appendChild(itemCard(it.kind, it.c)));
-    box.appendChild(grid);
+  if (!closetEl) {
+    // 2.4.20: fail LOUD — the closet div missing used to leave the whole
+    // closet silently empty while the classic lists below still worked.
+    wardrobeListError("her closet", "its place on the page is missing");
+    return;
   }
-  closetEl.appendChild(box);
+  try {
+    closetEl.innerHTML = "";
+    closetEl.appendChild(closetTabsEl());
+    if (tryOn) closetEl.appendChild(tryOnBar());
+    const box = document.createElement("div"); box.className = "closet-body";
+    if (closetTab === "looks") renderSavedLooks(box);
+    else if (closetTab === "book") renderBook(box);
+    else {
+      const grid = document.createElement("div"); grid.className = "closet-grid";
+      closetItems(closetTab).forEach((it) => grid.appendChild(itemCard(it.kind, it.c)));
+      box.appendChild(grid);
+    }
+    closetEl.appendChild(box);
+  } catch (e) {
+    // 2.4.20: a closet render failure must say so in the panel, not just
+    // in the console — the classic lists below still work.
+    console.warn("Closet failed to render:", e);
+    closetEl.innerHTML = "";
+    const p = document.createElement("p"); p.className = "wardrobe-note";
+    p.textContent = "Her closet didn't load — something in it broke (" + (e && e.message ? e.message : "unknown error") + "). The classic lists below still work.";
+    closetEl.appendChild(p);
+  }
 }
 // first run: count what she's already worn before the closet existed
 (function seedWorn() {
@@ -1148,6 +1221,7 @@ function autoStyleTick(atVanity) {
   ]);
 }
 function refreshOutfitStatus() {
+  if (!els.outfitStatus) return; // 2.4.20: a missing status line must not break opening the panel
   const { theme, look } = lookForDay(new Date());
   const manual = state.manualStyleDay === todayKey();
   els.outfitStatus.textContent = !state.autoStyle ? "Her own styling: off — she wears what you pick."
