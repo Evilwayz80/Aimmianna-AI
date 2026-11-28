@@ -1018,3 +1018,12 @@ body.wallpaper .sp-dock, body.wallpaper .tv-ov.pip { bottom: calc(var(--safe-b) 
 
 .pair-code{font:700 2rem/1.2 ui-monospace,Menlo,monospace;letter-spacing:.15em;text-align:center;padding:.6rem;margin:.5rem 0;border-radius:12px;background:rgba(255,255,255,.08);border:1px dashed rgba(255,255,255,.35)}
 .pair-code small{display:block;font:400 .8rem/1.3 system-ui,sans-serif;letter-spacing:0;opacity:.8}
+
+/* ---------------- skate park (2.4.21) ---------------- */
+.park-form select, .park-form input[type="text"] { width: 100%; }
+.board-list { display: flex; flex-direction: column; gap: 8px; }
+.board-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--panel); }
+.board-card b { display: block; }
+.board-card span { font-size: 13px; color: var(--muted); }
+.board-card .btn-row { margin-top: 8px; }
+.board-card .btn-row > * { margin: 0; }
