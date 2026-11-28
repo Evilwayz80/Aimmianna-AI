@@ -870,6 +870,16 @@ body.wallpaper .sp-dock, body.wallpaper .tv-ov.pip { bottom: calc(var(--safe-b) 
 .closet-thumb.th-outfit { background-size: 150% auto; background-position: 50% 30%; }
 .closet-thumb.th-hair { background-size: 230% auto; background-position: 50% 6%; }
 .closet-thumb.th-face { background-size: 400% auto; background-position: 50% 15.5%; }
+/* 2.4.20: closet thumbs are real <img> elements now (fail-loud fallback in
+   app.js) — same crop as the old CSS backgrounds, so the look is unchanged. */
+.closet-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 8px; }
+.closet-thumb.th-outfit img { object-position: 50% 30%; }
+.closet-thumb.th-hair img { object-position: 50% 6%; }
+.closet-thumb.th-face img { object-position: 50% 15.5%; }
+.closet-thumb.thumb-missing { display: flex; align-items: center; justify-content: center; }
+.closet-thumb.thumb-missing::after { content: "?"; font-size: 28px; color: #5b5266; }
+/* 2.4.20: plain-language failure notes inside the wardrobe panels. */
+.wardrobe-note { color: #e8a0a0; font-size: 13px; margin: 6px 0; }
 .closet-name { font-size: 13px; line-height: 1.2; color: var(--text); }
 .closet-rarity { font-size: 11px; color: var(--muted); }
 .r-rare .closet-rarity { color: #7db8ec; } .r-epic .closet-rarity { color: #c79bf2; } .r-legendary .closet-rarity { color: var(--gold); }
