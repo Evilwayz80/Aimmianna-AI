@@ -257,7 +257,13 @@ export function makeLifeFigures(T) {
   async function loadPlayerModel() {
     try {
       const { GLTFLoader } = await import("./vendor/loaders/GLTFLoader.js");
-      const gltf = await new GLTFLoader().loadAsync(PLAYER_MODEL_URL);
+      // 2.4.24: Game Mode figure is Draco-compressed — decoder in vendor/draco/.
+      const { DRACOLoader } = await import("./vendor/loaders/DRACOLoader.js");
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath("./vendor/draco/");
+      const loader = new GLTFLoader();
+      loader.setDRACOLoader(dracoLoader);
+      const gltf = await loader.loadAsync(PLAYER_MODEL_URL);
       const scene = gltf.scene;
       mixer = new T.AnimationMixer(scene);
       actions = Object.fromEntries(gltf.animations.map((clip) => [clip.name, mixer.clipAction(clip)]));
