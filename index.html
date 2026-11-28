@@ -42,7 +42,7 @@
     </select>
   </label>
 </header>
-<div id="statusChip" class="hud chip" aria-live="polite"><span id="roomLabel">Living Room</span> · <span id="idleLabel">vibing under the LEDs</span><span id="guestLabel"></span></div>
+<div id="statusChip" class="hud chip" aria-live="polite"><span id="roomLabel">Living Room</span> · <span id="idleLabel">vibing under the LEDs</span><span id="guestLabel"></span><span id="liveLabel"></span></div>
 
 <!-- 2.4.12: dedication to Emmi on the front of the app. Words only — no photo, no avatar, no voice. -->
 <div id="dedicationCard" class="dedication-card" role="dialog" aria-label="Dedication — For Emmi" hidden>
@@ -119,6 +119,33 @@
     <p id="wardrobeStatus" class="status-line">Wardrobe: usual outfit • hair: black and red</p>
     <p id="outfitStatus" class="status-line">Outfit: Auto —</p>
     <p id="homeStatus" class="status-line">Bedtime off. Alarm off.</p>
+    <div id="liveBox">
+      <h3>Live together</h3>
+      <p id="liveStatus" class="status-line">Live isn't on yet.</p>
+      <p id="liveHostLine" class="status-line"></p>
+      <div id="sharedFeed">
+        <h4>Shared — in the apartment together</h4>
+        <p class="help">Short notes and moments everyone here can see — movie nights, plans, little things. Private stuff never goes here: no private chats, no private memories, nothing from Tony's or Autumn's private side.</p>
+        <div id="sharedFeedList"></div>
+        <label for="sharedFeedInput">Add a shared note</label>
+        <input type="text" id="sharedFeedInput" maxlength="240" placeholder="Movie night at 8" autocomplete="off">
+        <div class="btn-row"><button type="button" class="wide-btn" id="sharedFeedAdd">Add to the shared feed</button></div>
+        <p id="sharedFeedStatus" class="status-line"></p>
+      </div>
+      <div id="liveSetupBox">
+        <h4>Live code</h4>
+        <p class="help">One code for the whole household. Tony makes it once; everyone types it once on their own phone. It never leaves the phones except to the live server, and it isn't your guest code.</p>
+        <label for="livePasteInput">Live code (from Tony)</label>
+        <input type="text" id="livePasteInput" placeholder="Paste the full live code here" autocomplete="off" autocapitalize="none" spellcheck="false">
+        <div class="btn-row">
+          <button type="button" class="wide-btn" id="livePasteBtn">Save live code</button>
+          <button type="button" class="wide-btn" id="liveMakeBtn" hidden>Make my live code</button>
+          <button type="button" class="wide-btn" id="liveClearBtn" hidden>Turn Live off</button>
+        </div>
+        <p id="liveCodeBox" class="pair-code" hidden></p>
+        <p id="liveSetupStatus" class="status-line"></p>
+      </div>
+    </div>
     <p class="help">Tap things in her apartment: the TV, stereo, PC, vanity, phone on the nightstand, lamps, LED strip, coffee maker, microwave, fridge, tub and sink. Tap the floor to send her somewhere, tap her to talk. Drag to look around, pinch to zoom, double-tap to reset.</p>
   </section>
   <section id="cardsSection" aria-label="Card games">
@@ -852,6 +879,14 @@
     <p id="deviceRoleStatus" class="status-line">This device hasn't been set up as Tony's phone or a guest yet.</p>
     <div class="btn-row"><button type="button" class="wide-btn" id="deviceRoleChangeBtn">Change how this device opens</button></div>
     <p class="help">Tony's phone gets the PIN prompt. A guest phone gets the guest-code prompt. Switch it here if this device was set up on the wrong path.</p>
+
+    <h3>Live together</h3>
+    <p id="liveSettingsStatus" class="status-line">Live isn't on yet.</p>
+    <p id="liveSettingsHostLine" class="status-line"></p>
+    <p class="help">Live is all four of you in the same apartment at the same time, from your own phones. One code for the whole household — Tony makes it once, and everyone types it once on their own phone. The shared feed (movie nights, plans) lives in the apartment panel, and it only ever holds shared things: private chats and private memories never go there. If Tony's phone goes offline, whoever's been online longest takes over hosting Aimmianna, so she stays one her.</p>
+    <div class="btn-row"><button type="button" class="wide-btn" id="liveSettingsMakeBtn" hidden>Make my live code</button></div>
+    <p id="liveSettingsCodeBox" class="pair-code" hidden></p>
+    <p id="liveSettingsSetupStatus" class="status-line"></p>
 
     <h3>Save her world</h3>
     <p id="worldBackupStatus" class="status-line">Her world lives on this device.</p>
