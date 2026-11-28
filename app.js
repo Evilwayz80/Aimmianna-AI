@@ -13,6 +13,7 @@
    Keys live only on this device (localStorage), never hardcoded, never logged. */
 import { createWorld, ROOMS, SPOTS, ROOM_SPOTS, roomAt, SUMMER_WARDROBE, BUILDER_SHAPES, BUILDER_PALETTE, BUILDER_FINISHES, BUILDER_SIZES, BUILDER_FIELD, BUILDER_BUILDERS } from "./world3d.js";
 import { openMemoryLink, newPairingCode, offerPairing, claimPairing, checkRelay } from "./companion-memory.js";
+import { createLiveClient } from "./live.js"; // 2.4.23: live together (token + code helpers live on the client)
 import { MASTER_RELEASE } from "./master-release-config.js";
 import { readMasterRelease } from "./master-release.js";
 import { makeCardGame } from "./cards.js";
@@ -31,7 +32,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.22";
+const VERSION = "Aimmianna 3D v2.4.23";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -168,7 +169,10 @@ const els = {};
  "parkSkateName","parkSkateBoot","parkSkateWheels","parkSkateStyle",
  "builderStatus","builderShareStatus","builderShapeList","builderColor","builderFinish","builderSize",
  "builderName","builderSlotList","builderSelected","builderDriveStatus",
- "tvOverlay","voiceEl","startOverlay","loadState"
+ "tvOverlay","voiceEl","startOverlay","loadState",
+ "liveLabel","liveStatus","liveHostLine","sharedFeedList","sharedFeedInput","sharedFeedAdd","sharedFeedStatus",
+ "liveSetupBox","livePasteInput","livePasteBtn","liveMakeBtn","liveClearBtn","liveCodeBox","liveSetupStatus",
+ "liveSettingsStatus","liveSettingsHostLine","liveSettingsMakeBtn","liveSettingsCodeBox","liveSettingsSetupStatus"
 ].forEach((id) => { els[id] = $(id); });
 
 let toastTimer = null;
@@ -2279,7 +2283,10 @@ function doPose(name, opts) {
   const pose = POSES.find((p) => p.id === name);
   if (!pose) return null;
   holdRoutine(90000);
-  world.setPose(name, (opts && opts.ms) || 12000);
+  // 2.4.23 live: on a non-host phone her body comes from the host — a
+  // pose asked for here waits instead of fighting the stream. Her
+  // spoken line still plays: her voice is local, her body is shared.
+  if (isLiveHost()) world.setPose(name, (opts && opts.ms) || 12000);
   if (name === "kiss" || name === "heart") spawnPoseFx(name);
   if (name === "hug") spawnPoseFx("heart");
   const line = pickOne(pose.lines);
@@ -3271,6 +3278,255 @@ function whoIsLoggedIn() {
 // Tell the world the login changed (guest just entered their code, Tony
 // picked his phone, role cleared) so it rebuilds the guest set.
 function syncLoggedInToWorld() { try { if (world && typeof world.setLoggedIn === "function") world.setLoggedIn(whoIsLoggedIn()); } catch (e) {} }
+
+/* ================= live together (2.4.23) =================
+   All four in the same apartment, in real time, from their own
+   phones. One small live server holds the room; this phone sends
+   where its person is a few times a second and draws everyone else
+   gliding where their phones say they are. Aimmianna is hosted by
+   Tony's phone while he's on; if he goes offline, the guest who has
+   been online longest takes over hosting her, so she stays one her
+   instead of a different one on each phone. The shared feed is the
+   apartment's shared notes — movie nights, plans, little moments —
+   and it only ever holds shared things: the ONLY thing that ever
+   goes to the live server as shared text is what someone types into
+   the shared feed box. Private chats and private memories never go
+   near it — no code path sends them there. */
+const LIVE_WHO_NAMES = { tony: "Tony", summer: "Summer", autumn: "Autumn" };
+let liveClient = null; // one client, made once below (after the hooks)
+let liveRoster = [];
+let liveHost = null;
+let liveStatusText = "Live isn't on yet.";
+let sharedFeed = [];
+// True when this phone is the one driving Aimmianna: live off (she's
+// local, as always), not connected yet, or this phone won the host
+// election.
+function isLiveHost() { return !liveClient || !liveClient.isConnected() || liveClient.amHost(); }
+function liveWhoName(who) { return LIVE_WHO_NAMES[who] || who || "someone"; }
+function liveMe() { return whoIsLoggedIn(); }
+
+function renderLive() {
+  const on = !!liveClient && liveClient.isConnected();
+  const hasCode = !!liveClient && liveClient.hasToken();
+  const names = liveRoster.map(liveWhoName).join(", ");
+  if (els.liveLabel) els.liveLabel.textContent = on ? " · Live" + (names ? " — " + names : "") : (hasCode ? " · Live off" : "");
+  const status = on ? ("Live — here now: " + (names || "just you")) : liveStatusText;
+  if (els.liveStatus) els.liveStatus.textContent = status;
+  if (els.liveSettingsStatus) els.liveSettingsStatus.textContent = status;
+  const hostLine = on && liveHost ? ("Aimmianna is hosted by " + liveWhoName(liveHost) + "'s phone" + (liveHost === liveMe() ? " (this one)" : "") + ".") : "";
+  if (els.liveHostLine) els.liveHostLine.textContent = hostLine;
+  if (els.liveSettingsHostLine) els.liveSettingsHostLine.textContent = hostLine;
+  // Only Tony makes the household code; everyone can type one in, and
+  // anyone can turn Live off on their own phone.
+  const tony = isTonyRole();
+  if (els.liveMakeBtn) els.liveMakeBtn.hidden = !tony;
+  if (els.liveSettingsMakeBtn) els.liveSettingsMakeBtn.hidden = !tony;
+  if (els.liveClearBtn) els.liveClearBtn.hidden = !hasCode;
+}
+
+function renderSharedFeed() {
+  if (!els.sharedFeedList) return;
+  const me = liveMe();
+  els.sharedFeedList.innerHTML = "";
+  if (!sharedFeed.length) {
+    const p = document.createElement("p");
+    p.className = "help";
+    p.textContent = "Nothing shared yet — add the first note.";
+    els.sharedFeedList.appendChild(p);
+    return;
+  }
+  const sorted = [...sharedFeed].sort((a, b) => (a.at || 0) - (b.at || 0));
+  for (const e of sorted.slice(-50)) {
+    const row = document.createElement("div");
+    row.className = "shared-note";
+    const who = document.createElement("b");
+    who.textContent = liveWhoName(e.who);
+    const when = document.createElement("span");
+    when.className = "shared-when";
+    when.textContent = e.at ? new Date(e.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+    const text = document.createElement("span");
+    text.textContent = " " + (e.text || "");
+    row.append(who, when, text);
+    // You can delete your own notes; Tony can delete any of them.
+    if (e.who === me || isTonyRole()) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "shared-del";
+      del.textContent = "✕";
+      del.setAttribute("aria-label", "Delete this shared note");
+      del.addEventListener("click", () => deleteSharedFeed(e.id));
+      row.appendChild(del);
+    }
+    els.sharedFeedList.appendChild(row);
+  }
+}
+
+function addSharedFeed() {
+  const text = (els.sharedFeedInput ? els.sharedFeedInput.value : "").trim();
+  if (!text) { if (els.sharedFeedStatus) els.sharedFeedStatus.textContent = "Type a note first."; return; }
+  if (!liveClient || !liveClient.isConnected()) {
+    if (els.sharedFeedStatus) els.sharedFeedStatus.textContent = "Live isn't on right now — the note can't reach everyone yet.";
+    return;
+  }
+  // The server stamps the id and time and broadcasts the entry back to
+  // everyone including the sender — the onShared hook below is what
+  // puts it in the feed, so a note only ever appears once it is really
+  // shared. Nothing is added locally with a made-up id.
+  const sent = liveClient.sharedAdd("note", text);
+  if (!sent) { if (els.sharedFeedStatus) els.sharedFeedStatus.textContent = "Live isn't on right now — the note can't reach everyone yet."; return; }
+  els.sharedFeedInput.value = "";
+  if (els.sharedFeedStatus) els.sharedFeedStatus.textContent = "Shared with everyone here.";
+}
+function deleteSharedFeed(id) {
+  // The server broadcasts the delete back to everyone including the
+  // sender — the onSharedDel hook below is what drops the row, so a
+  // delete the room refuses (not yours, not Tony's) leaves it standing.
+  if (liveClient && liveClient.isConnected()) liveClient.sharedDel(id);
+}
+
+// Called once the role + guest id are known and the world exists: after
+// login (Tony or a guest) and at the end of initWorld, whichever is
+// later. No code set up yet? Live simply stays off and the app works
+// exactly as before — nothing here nags for it.
+function connectLiveAfterLogin() {
+  if (!liveClient) return;
+  if (liveClient.isConnected()) return;
+  if (!world || typeof world.setRemotePresent !== "function") return;
+  const me = liveMe();
+  if (!me) return;
+  if (!liveClient.hasToken()) { renderLive(); return; }
+  liveClient.connect(me);
+  renderLive();
+}
+
+// One live client for the app, made once: the Settings / hub setup
+// flows (make a code, type a code) use its makeCode / setCode before
+// any connection exists, and connectLiveAfterLogin just connects it.
+// The hooks below are the client's whole view of the app: where our
+// person and Aimmianna are, and what to do with everyone else's.
+liveClient = createLiveClient({
+  hooks: {
+    getLocalState: () => {
+      if (!world) return null;
+      const me = liveMe();
+      const g = me === "tony" ? world.getTony() : me === "summer" ? world.getSummer() : world.getGuest();
+      if (!g || !g.ready) return null;
+      return { x: g.pos.x, z: g.pos.z, hd: g.heading || 0, mv: g.moving ? 1 : 0, pose: g.mode || "idle", room: world.roomAt ? world.roomAt(g.pos.x, g.pos.z) : "living" };
+    },
+    getHerState: () => {
+      if (!world) return null;
+      const h = world.getHer();
+      if (!h || !h.pos) return null;
+      return { x: h.pos.x, z: h.pos.z, hd: h.heading || 0, mv: h.walking ? 1 : 0, pose: h.mode || "idle", room: h.room };
+    },
+    onStatus: (text) => { liveStatusText = text; renderLive(); },
+    onWelcome: (w) => {
+      liveRoster = w.present || [];
+      sharedFeed = (w.sharedRecent || []).slice(-500);
+      for (const who of ["autumn", "summer", "tony"]) {
+        if (who !== liveMe() && world && world.setRemotePresent) world.setRemotePresent(who, liveRoster.includes(who));
+      }
+      renderSharedFeed();
+      renderLive();
+    },
+    // The client has no roster hook: a join surfaces here, on the
+    // newcomer's first position — so this is where their avatar gets
+    // built (a late joiner never appears in our welcome roster). A
+    // leave surfaces on onBye.
+    onPos: (who, s) => {
+      if (!liveRoster.includes(who)) {
+        liveRoster.push(who);
+        renderLive();
+        if (who !== liveMe() && world && world.setRemotePresent) world.setRemotePresent(who, true);
+      }
+      if (who !== liveMe() && world && world.setRemoteTarget) world.setRemoteTarget(who, s);
+    },
+    onBye: (who) => {
+      liveRoster = liveRoster.filter((w) => w !== who);
+      if (who !== liveMe() && world && world.setRemotePresent) world.setRemotePresent(who, false);
+      renderLive();
+    },
+    onHerPos: (s) => {
+      // The host drives her — never while this phone is the host.
+      if (liveClient && !liveClient.amHost() && world && world.setLiveHer) world.setLiveHer(s);
+    },
+    onEmote: (who, emote) => {
+      if (!world || who === liveMe()) return;
+      try {
+        if (who === "summer" && world.summerEmote) world.summerEmote(emote);
+        else if (who === "tony" && world.tonyEmote) world.tonyEmote(emote);
+        else if (who === "autumn" && world.guestEmote) world.guestEmote(emote);
+      } catch (e) {}
+    },
+    onShared: (entry) => {
+      if (!sharedFeed.find((e) => e.id === entry.id)) sharedFeed.push(entry);
+      if (sharedFeed.length > 500) sharedFeed = sharedFeed.slice(-500);
+      renderSharedFeed();
+    },
+    onSharedDel: (id) => { sharedFeed = sharedFeed.filter((e) => e.id !== id); renderSharedFeed(); },
+    onHostChange: (hostWho) => {
+      liveHost = hostWho || null;
+      // We just became the host: she is ours again — clear any remote
+      // hold on her so local movement resumes.
+      if (hostWho && hostWho === liveMe() && world && world.setLiveHer) world.setLiveHer(null);
+      renderLive();
+    },
+  },
+});
+
+// Tony makes the household live code once. It shows on screen exactly
+// once, for him to hand to Summer and Autumn in person or in a private
+// message — the parent sets the same code as the live server's secret
+// (the app never sends it anywhere itself). His own phone keeps the
+// token half, so Live joins right away.
+function liveMakeCode() {
+  if (!isTonyRole()) { toast("Only Tony makes the live code."); return; }
+  if (!liveClient) { toast("Live isn't ready yet — try again in a moment."); return; }
+  let code = "";
+  try { code = liveClient.makeCode(); } catch (e) { code = ""; }
+  if (!code) { toast("Couldn't make a live code right now."); return; }
+  const note = "This is the household live code — show it to Summer and Autumn once, in person or in a private message. It is NOT your guest code, and it only works once the same code is set on the live server. Your phone already saved its half, so Live will join now.";
+  if (els.liveCodeBox) { els.liveCodeBox.textContent = code; els.liveCodeBox.hidden = false; }
+  if (els.liveSettingsCodeBox) { els.liveSettingsCodeBox.textContent = code; els.liveSettingsCodeBox.hidden = false; }
+  if (els.liveSetupStatus) els.liveSetupStatus.textContent = note;
+  if (els.liveSettingsSetupStatus) els.liveSettingsSetupStatus.textContent = note;
+  // The code hides itself after 90 seconds — it is a secret, not a
+  // label to leave on screen.
+  setTimeout(() => { if (els.liveCodeBox) els.liveCodeBox.hidden = true; if (els.liveSettingsCodeBox) els.liveSettingsCodeBox.hidden = true; }, 90000);
+  renderLive();
+  connectLiveAfterLogin();
+}
+function liveSaveCode() {
+  const raw = els.livePasteInput ? els.livePasteInput.value.trim() : "";
+  const fail = "That code doesn't look right — it should be two long parts with a dot between them. Ask Tony for the live code.";
+  const ok = !!liveClient && !!raw && liveClient.setCode(raw);
+  if (els.livePasteInput && ok) els.livePasteInput.value = "";
+  const msg = ok ? "Live code saved. Live will join once you're logged in." : fail;
+  if (els.liveSetupStatus) els.liveSetupStatus.textContent = msg;
+  if (els.liveSettingsSetupStatus) els.liveSettingsSetupStatus.textContent = msg;
+  if (ok) { renderLive(); connectLiveAfterLogin(); }
+}
+function liveClear() {
+  // clearToken disconnects (says bye) and forgets the token half.
+  if (liveClient) { try { liveClient.clearToken(); } catch (e) {} }
+  liveRoster = []; liveHost = null; sharedFeed = [];
+  liveStatusText = "Live isn't on yet.";
+  if (world) {
+    try { world.setLiveHer(null); } catch (e) {}
+    for (const who of ["autumn", "summer", "tony"]) { try { world.setRemotePresent(who, false); } catch (e) {} }
+  }
+  renderSharedFeed();
+  renderLive();
+  toast("Live is off on this phone.");
+}
+if (els.liveMakeBtn) els.liveMakeBtn.addEventListener("click", liveMakeCode);
+if (els.liveSettingsMakeBtn) els.liveSettingsMakeBtn.addEventListener("click", liveMakeCode);
+if (els.livePasteBtn) els.livePasteBtn.addEventListener("click", liveSaveCode);
+if (els.liveClearBtn) els.liveClearBtn.addEventListener("click", liveClear);
+if (els.sharedFeedAdd) els.sharedFeedAdd.addEventListener("click", addSharedFeed);
+if (els.sharedFeedInput) els.sharedFeedInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addSharedFeed(); } });
+renderLive();
+renderSharedFeed();
 function isGuest() { return roleGet() === "guest"; }
 function isTonyRole() { return roleGet() === "tony"; }
 function guestCodesGet() {
@@ -3369,6 +3625,7 @@ function whoChooseTony() {
   roleSet("tony");
   hideWhoScreen();
   syncLoggedInToWorld(); // 2.4.22: Tony's avatar loads now (if it hasn't already)
+  connectLiveAfterLogin(); // 2.4.23: live joins once the login is known
   // Tony's path: the 2.4.9 first-launch PIN ask, if he hasn't set one.
   let asked = false; try { asked = localStorage.getItem(PIN_SETUP_KEY) === "1"; } catch (e) {}
   if (!pinIsSet() && !asked) showPinScreen("setup");
@@ -3390,6 +3647,7 @@ function guestEnterCode() {
   guestMarkLoggedIn(entry); // 2.4.22: remember WHICH guest logged in, for the world's login gate
   hideWhoScreen();
   syncLoggedInToWorld(); // 2.4.22: their avatar loads now, one at a time after the room opens
+  connectLiveAfterLogin(); // 2.4.23: live joins once the login is known
   toast("Welcome in — this is the shared side of her apartment.");
 }
 function guestRequestSend() {
@@ -3654,7 +3912,7 @@ function buildWorldBackup() {
   try { builder = JSON.parse(localStorage.getItem(BUILDER_KEYS.shared) || "null"); } catch { builder = null; }
   try { builderSlots = JSON.parse(localStorage.getItem(BUILDER_KEYS.slots) || "null"); } catch { builderSlots = null; }
   return {
-    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 263,
+    app: "Aimmianna 3D", kind: "aimmianna-world-backup", version: VERSION, webBuild: 264,
     exportedAt: new Date().toISOString(), state: JSON.parse(JSON.stringify(state)),
     builder, builderSlots
   };
@@ -6645,6 +6903,7 @@ function initWorld() {
   if (state.lowPower && world.setLowPower) world.setLowPower(true);
   // follow her by default
   world.setFollow(); refreshRoomBar();
+  connectLiveAfterLogin(); // 2.4.23: live joins once the world is up (login may already be known)
   setInterval(refreshRoomBar, 1500);
   window.__world = world; // handy for debugging / future avatar swaps
 }
