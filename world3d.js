@@ -2130,6 +2130,11 @@ export function createWorld(opts) {
     popsicle: { l: 0.8, w: 0.2 }, cruiser: { l: 0.7, w: 0.22 },
     oldschool: { l: 0.78, w: 0.24 }, wide: { l: 0.82, w: 0.26 }, longboard: { l: 1.05, w: 0.24 }
   };
+  // 2.4.21: deck art is a stripe down the grip in the art's accent colour;
+  // a sticker is a small coloured disc on the deck. Both are pure
+  // catalogue choices from the Park panel — no new assets.
+  const SKATE_ART_ACCENTS = { skull: "#e8e8e8", flames: "#ff7a1a", roses: "#c01535", galaxy: "#ff4fa8", checker: "#111111" };
+  const SKATE_STICKER_COLOURS = { skull: "#e8e8e8", rose: "#c01535", flame: "#ff7a1a", star: "#ffd94a", moon: "#d8d8e8" };
   const skate = {
     riders: new Set(), picked: "tony",
     gear: { kind: "board", board: null, skates: null },
@@ -2156,6 +2161,17 @@ export function createWorld(opts) {
     deck.position.y = 0; g.add(deck);
     const grip = new THREE.Mesh(new THREE.BoxGeometry(W * 0.96, 0.008, L * 0.96), gripMat);
     grip.position.y = 0.019; g.add(grip);
+    // 2.4.21: deck art stripe down the grip, sticker disc on the deck.
+    if (s.art && SKATE_ART_ACCENTS[s.art]) {
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(W * 0.22, 0.004, L * 0.9),
+        new THREE.MeshLambertMaterial({ color: new THREE.Color(SKATE_ART_ACCENTS[s.art]) }));
+      stripe.position.y = 0.025; g.add(stripe);
+    }
+    if (s.sticker && SKATE_STICKER_COLOURS[s.sticker]) {
+      const decal = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16),
+        new THREE.MeshLambertMaterial({ color: new THREE.Color(SKATE_STICKER_COLOURS[s.sticker]) }));
+      decal.rotation.x = -Math.PI / 2; decal.position.set(0, 0.028, -L * 0.22); g.add(decal);
+    }
     for (const sz of [-1, 1]) {
       const tip = new THREE.Mesh(new THREE.BoxGeometry(W, 0.02, 0.08), deckMat);
       tip.position.set(0, 0.02, sz * (L / 2 - 0.02)); tip.rotation.x = -sz * 0.35; g.add(tip);
@@ -2177,10 +2193,12 @@ export function createWorld(opts) {
     const g = new THREE.Group();
     const bootMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(s.color || "#8a0f2e") });
     const wheelMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(s.wheels || "#e8e8e8") });
+    // 2.4.21: inline skates run one longer wheel bar; quads keep the short bar.
+    const barLen = s.style === "inline" ? 0.24 : 0.18;
     for (const sx of [-1, 1]) {
       const boot = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.22), bootMat);
       boot.position.set(sx * 0.09, 0.05, 0.03); g.add(boot);
-      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.18, 8), wheelMat);
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, barLen, 8), wheelMat);
       bar.rotation.z = Math.PI / 2;
       bar.position.set(sx * 0.09, 0.02, 0.03); g.add(bar);
     }
@@ -2235,8 +2253,10 @@ export function createWorld(opts) {
   function skateSetGear(gear) {
     if (gear && typeof gear === "object") {
       if (gear.kind === "board" || gear.kind === "skates") skate.gear.kind = gear.kind;
-      if (gear.board) skate.gear.board = gear.board;
-      if (gear.skates) skate.gear.skates = gear.skates;
+      // 2.4.21: "board"/"skates" keys present with null CLEAR the spec
+      // (the active design was deleted) — only a missing key keeps it.
+      if ("board" in gear) skate.gear.board = gear.board || null;
+      if ("skates" in gear) skate.gear.skates = gear.skates || null;
     }
     for (const r of skate.riders) applyGearToRider(r);
     return { ok: true, gear: skate.gear.kind };
@@ -2258,7 +2278,13 @@ export function createWorld(opts) {
       gear: skate.gear.kind,
       board: skate.gear.board ? (skate.gear.board.name || null) : null,
       skates: skate.gear.skates ? (skate.gear.skates.name || null) : null,
-      boards: Object.fromEntries(["aimmianna", "autumn", "summer", "tony"].map((r) => [r, !!(skate.boards[r] && skate.boards[r].visible)]))
+      boards: Object.fromEntries(["aimmianna", "autumn", "summer", "tony"].map((r) => [r, !!(skate.boards[r] && skate.boards[r].visible)])),
+      // 2.4.21: the saved spec round-trips here (panel + smoke test), and
+      // boardParts/skateParts count the built meshes — a plain board is 10
+      // parts, +1 for an art stripe, +1 for a sticker.
+      spec: { board: skate.gear.board || null, skates: skate.gear.skates || null },
+      boardParts: Object.fromEntries(["aimmianna", "autumn", "summer", "tony"].map((r) => [r, skate.boards[r] ? skate.boards[r].children.length : 0])),
+      skateParts: Object.fromEntries(["aimmianna", "autumn", "summer", "tony"].map((r) => [r, skate.skatesMesh[r] ? skate.skatesMesh[r].children.length : 0]))
     };
   }
   // Sparks that flash under the board during a grind.
