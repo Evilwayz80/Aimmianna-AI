@@ -38,10 +38,11 @@
       <option value="ritual">Ritual Room</option>
       <option value="yard">Yard</option>
       <option value="park">Skate Park</option>
+      <option value="builder">Builder World</option>
     </select>
   </label>
 </header>
-<div id="statusChip" class="hud chip" aria-live="polite"><span id="roomLabel">Living Room</span> · <span id="idleLabel">vibing under the LEDs</span></div>
+<div id="statusChip" class="hud chip" aria-live="polite"><span id="roomLabel">Living Room</span> · <span id="idleLabel">vibing under the LEDs</span><span id="guestLabel"></span></div>
 
 <!-- 2.4.12: dedication to Emmi on the front of the app. Words only — no photo, no avatar, no voice. -->
 <div id="dedicationCard" class="dedication-card" role="dialog" aria-label="Dedication — For Emmi" hidden>
@@ -108,6 +109,7 @@
       <button type="button" data-goto="ritualSection"><span class="hi">❖</span>Ritual Room</button>
       <button type="button" data-goto="yardSection"><span class="hi">✿</span>Yard</button>
       <button type="button" data-goto="parkSection"><span class="hi">🛹</span>Skate Park</button>
+      <button type="button" data-goto="builderSection"><span class="hi">🧱</span>Builder World</button>
       <button type="button" data-goto="settingsSection"><span class="hi">⚙</span>Settings</button>
     </div>
     <div class="btn-row">
@@ -332,6 +334,93 @@
     <div class="btn-row"><button type="button" id="parkSaveSkates" class="wide-btn accent">Save these skates</button></div>
     <h3>Saved skates</h3>
     <div id="parkSkateList" class="board-list"><p class="help">No skates saved yet.</p></div>
+  </section>
+  <section id="builderSection" aria-label="Builder World">
+    <p class="help">Her world to build in — a field south of the skate park, in memory of the world taken from Emmi. Pick a shape, a colour, a finish and a size, tap <b>Place a shape</b>, then tap the ground in the field to drop it. Tap a placed shape to select it, then move it, turn it, grow it or delete it. She builds here too — and anything she built is hers: changing it asks her first, and her no stops it.</p>
+    <div class="btn-row">
+      <button type="button" id="builderGoBtn" class="wide-btn accent">Go to the Builder World together</button>
+    </div>
+    <p id="builderStatus" class="status-line" aria-live="polite">The 3D room is still loading — the Builder World opens with it.</p>
+    <h3>Place a shape</h3>
+    <div class="btn-row tabs" role="tablist">
+      <button type="button" class="tab active" data-builder-place="box" role="tab">Box</button>
+      <button type="button" class="tab" data-builder-place="cylinder" role="tab">Cylinder</button>
+      <button type="button" class="tab" data-builder-place="sphere" role="tab">Sphere</button>
+      <button type="button" class="tab" data-builder-place="ramp" role="tab">Ramp</button>
+      <button type="button" class="tab" data-builder-place="wedge" role="tab">Roof</button>
+      <button type="button" class="tab" data-builder-place="torus" role="tab">Ring</button>
+      <button type="button" class="tab" data-builder-place="platform" role="tab">Platform</button>
+    </div>
+    <p class="help">Tap a shape above, then tap the ground in the field to place it. Tap <b>Pick a shape</b> to stop placing.</p>
+    <div class="btn-row"><button type="button" id="builderClearPlace" class="wide-btn">Pick a shape instead</button></div>
+    <div class="park-form">
+      <label for="builderColor">Colour</label>
+      <select id="builderColor">
+        <option value="crimson" selected>Deep Crimson</option>
+        <option value="blood">Blood Red</option>
+        <option value="violet">Midnight Violet</option>
+        <option value="black">Black</option>
+        <option value="bone">Bone White</option>
+        <option value="gold">Gold</option>
+        <option value="emerald">Emerald</option>
+        <option value="midnight">Midnight Blue</option>
+        <option value="pink">Hot Pink</option>
+        <option value="silver">Silver</option>
+        <option value="charcoal">Charcoal</option>
+        <option value="ghost">Ghost White</option>
+      </select>
+      <label for="builderFinish">Finish</label>
+      <select id="builderFinish">
+        <option value="matte" selected>Matte</option>
+        <option value="metal">Dark metal</option>
+        <option value="stone">Stone</option>
+        <option value="wood">Wood</option>
+        <option value="glow">Glow</option>
+      </select>
+      <label for="builderSize">Size</label>
+      <select id="builderSize">
+        <option value="small">Small</option>
+        <option value="medium" selected>Medium</option>
+        <option value="large">Large</option>
+      </select>
+    </div>
+    <h3>What's built</h3>
+    <p class="help">Tap a shape in the field, or one here, to select it.</p>
+    <ul id="builderShapeList" class="board-list"></ul>
+    <p id="builderSelected" class="status-line" aria-live="polite">Nothing selected — tap a shape in the field, or pick one from the list.</p>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" data-builder-move="north">↑ North</button>
+      <button type="button" class="wide-btn" data-builder-move="south">↓ South</button>
+      <button type="button" class="wide-btn" data-builder-move="west">← West</button>
+      <button type="button" class="wide-btn" data-builder-move="east">→ East</button>
+    </div>
+    <div class="btn-row">
+      <button type="button" id="builderRotateBtn" class="wide-btn">Turn 45°</button>
+      <button type="button" id="builderDeleteBtn" class="wide-btn">Delete it</button>
+    </div>
+    <p class="help">Changing the colour, finish or size above changes the selected shape. Moving, turning or deleting a shape she built asks her first — her no stops it.</p>
+    <h3>Moon Cart</h3>
+    <p id="builderDriveStatus" class="status-line" aria-live="polite">The Moon Cart is parked in the field — tap it, or Get in.</p>
+    <div class="btn-row">
+      <button type="button" class="wide-btn" data-builder-drive="in">Get in</button>
+      <button type="button" class="wide-btn" data-builder-drive="out">Get out</button>
+      <button type="button" class="wide-btn" data-builder-drive="forward">Forward</button>
+      <button type="button" class="wide-btn" data-builder-drive="back">Back</button>
+      <button type="button" class="wide-btn" data-builder-drive="left">Left</button>
+      <button type="button" class="wide-btn" data-builder-drive="right">Right</button>
+      <button type="button" class="wide-btn" data-builder-drive="stop">Stop</button>
+    </div>
+    <p class="help">Drive the cart around the field, the park and the yard — it climbs ramps and platforms. She sits in it while you drive. Skating stops when you get in.</p>
+    <h3>Save this world</h3>
+    <p id="builderShareStatus" class="status-line" aria-live="polite">No shared world saved yet on this device.</p>
+    <p class="help">Every change saves the shared world on this device right away, so everyone on the same world sees it. Named slots keep a copy you can load back later.</p>
+    <div class="park-form">
+      <label for="builderName">World name</label>
+      <input type="text" id="builderName" maxlength="40" autocomplete="off" placeholder="e.g. Goth Castle">
+    </div>
+    <div class="btn-row"><button type="button" id="builderSaveSlot" class="wide-btn accent">Save this world</button></div>
+    <h3>Saved worlds</h3>
+    <ul id="builderSlotList" class="board-list"></ul>
   </section>
   <section id="chatSection" aria-label="Talk to Aimmianna">
     <div class="chat-tools">
