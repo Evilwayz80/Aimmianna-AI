@@ -578,15 +578,34 @@ class BuiltInAvatar extends BillboardAvatar {
       const loader = new GLTFLoader();
       loader.setDRACOLoader(dracoLoader);
       const load = (filename) => loader.loadAsync(new URL(`./assets/models/${filename}`, import.meta.url).href);
-      let rigged = true, gltf;
+      // A plain loader with NO Draco attached, for the uncompressed backup
+      // (2.4.25) — if the decoder itself is the problem, a Draco loader
+      // cannot load the backup either.
+      const loadPlain = (filename) => new GLTFLoader().loadAsync(new URL(`./assets/models/${filename}`, import.meta.url).href);
+      const hasClips = (g) => ["idle", "walk"].every((name) => THREE.AnimationClip.findByName(g.animations, name)?.duration > 0);
+      let rigged = true, gltf, modelSource = "draco";
       try {
         gltf = await load("aimmianna-rigged.glb");
-        if (!["idle", "walk"].every((name) => THREE.AnimationClip.findByName(gltf.animations, name)?.duration > 0))
-          throw new Error("Idle and Walk are required");
+        if (!hasClips(gltf)) throw new Error("Idle and Walk are required");
       } catch (error) {
-        console.warn("Animated avatar unavailable; loading the static 3D model.", error);
-        rigged = false;
-        gltf = await load("aimmianna-mobile.glb");
+        // 2.4.25: the squeezed (Draco) file failed on this phone — try the
+        // full-size original before ever falling back to the stiff stand-in.
+        console.warn("Draco avatar failed; trying the uncompressed backup.", error);
+        modelSource = "nodraco";
+        try {
+          gltf = await loadPlain("aimmianna-rigged-nodraco.glb");
+          if (!hasClips(gltf)) throw new Error("Idle and Walk are required");
+        } catch (error2) {
+          console.warn("Animated avatar unavailable; loading the static 3D model.", error2);
+          rigged = false;
+          modelSource = "static";
+          // 2.4.25: the stand-in loads through the PLAIN loader too — the
+          // 2.4.24 mobile file was itself Draco-compressed, so a broken
+          // decoder killed the last resort as well. The shipped mobile file
+          // is the uncompressed 2.4.23 export, and this path never touches
+          // the decoder at all.
+          gltf = await loadPlain("aimmianna-mobile.glb");
+        }
       }
       const { scene, animations } = gltf;
       if (rigged) {
@@ -609,6 +628,10 @@ class BuiltInAvatar extends BillboardAvatar {
       group.add(facing);
       this.modelParts = [];
       this.rigged = rigged;
+      // 2.4.25: which file actually loaded — "draco" (squeezed), "nodraco"
+      // (full-size backup) or "static" (stiff stand-in). The app reads it
+      // through getAimmiannaModel() and says so plainly on screen.
+      this.modelSource = modelSource;
       // Pose bones (2.4.6): refs for the procedural pose layer, if present.
       this.poseBones = {};
       if (rigged) for (const name of POSE_BONE_NAMES) { const b = scene.getObjectByName(name); if (b) this.poseBones[name] = b; }
@@ -3903,6 +3926,10 @@ export function createWorld(opts) {
     // applies the saved board or skates design, getSkate reports the
     // session. Riders: "tony", "aimmianna", "autumn", "summer".
     skateStart, skateStop, skatePick, skateTrick, skateSetGear, getSkate,
+    // 2.4.25: which of her model files actually loaded — the app says so
+    // plainly on screen when it is not the squeezed one. rigged is false
+    // on the stiff stand-in; source is null while it is still loading.
+    getAimmiannaModel: () => ({ rigged: !!avatar.rigged, source: avatar.modelSource || null }),
     // Builder World (2.4.22): shapes are plain specs; the panel owns
     // the approval gate (her builds ask her first) and the saves — the
     // world just builds, moves and stands on them. builderGroundAt is
