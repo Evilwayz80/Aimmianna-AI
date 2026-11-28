@@ -58,6 +58,50 @@ export const SUMMER_WARDROBE = {
 };
 export const SUMMER_WARDROBE_DEFAULT = { outfit: "midnight_velvet", shoes: "mary_janes", makeup: "smoky_doll", hair: "loose_waves", dye: "crimson_ends" };
 
+/* 2.4.22 — Builder World catalogue (module scope, exported so the panel
+   and the harness read the same lists the world builds from). The field
+   is the open ground south of the park: x 2..12, z 17.5..26.5. Shapes
+   are plain data — the world builds meshes from them, so a saved world
+   is just a list of specs. builtBy tags who made a shape: "tony",
+   "aimmianna", "summer", "autumn". */
+export const BUILDER_FIELD = { x0: 2, x1: 12, z0: 17.5, z1: 26.5 };
+export const BUILDER_SHAPES = [
+  { id: "box", label: "Block", desc: "A plain box — walls, steps, towers" },
+  { id: "cylinder", label: "Pillar", desc: "A round pillar or column" },
+  { id: "sphere", label: "Orb", desc: "A ball — moons, bubbles, boulders" },
+  { id: "ramp", label: "Ramp", desc: "A slope you can walk up" },
+  { id: "wedge", label: "Roof", desc: "A peaked roof shape" },
+  { id: "torus", label: "Ring", desc: "A standing ring — an arch or portal" },
+  { id: "platform", label: "Platform", desc: "A flat slab to stand on" },
+];
+export const BUILDER_PALETTE = [
+  { id: "crimson", label: "Deep Crimson", hex: "#8a0f2e" },
+  { id: "black", label: "Black", hex: "#141414" },
+  { id: "bone", label: "Bone White", hex: "#e6dfe8" },
+  { id: "violet", label: "Midnight Violet", hex: "#6a2a8a" },
+  { id: "blood", label: "Blood Red", hex: "#c01535" },
+  { id: "gold", label: "Gold", hex: "#c9a24a" },
+  { id: "emerald", label: "Emerald", hex: "#0f7a6a" },
+  { id: "midnight", label: "Midnight Blue", hex: "#2a4a8a" },
+  { id: "pink", label: "Hot Pink", hex: "#ff4fa8" },
+  { id: "silver", label: "Silver", hex: "#c8c8d0" },
+  { id: "charcoal", label: "Charcoal", hex: "#333338" },
+  { id: "ghost", label: "Ghost White", hex: "#f0ead8" },
+];
+export const BUILDER_FINISHES = [
+  { id: "matte", label: "Matte" },
+  { id: "metal", label: "Dark metal" },
+  { id: "stone", label: "Stone" },
+  { id: "wood", label: "Wood" },
+  { id: "glow", label: "Glow" },
+];
+export const BUILDER_SIZES = {
+  small: { label: "Small", w: 0.6, h: 0.6, d: 0.6 },
+  medium: { label: "Medium", w: 1.2, h: 1.2, d: 1.2 },
+  large: { label: "Large", w: 2.2, h: 2.2, d: 2.2 },
+};
+export const BUILDER_BUILDERS = ["tony", "aimmianna", "summer", "autumn"];
+
 /* 2.4.20 — smooth continuous follow, one shared step law for all three
    guests, so the group never rubber-bands. The old law moved each guest
    at exactly Aimmianna's speed toward a target that itself moves at her
@@ -91,7 +135,10 @@ export const ROOMS = {
   // Skate park (2.4.20): a real outdoor place south of the yard, past the
   // yard fence — concrete, half pipe, bowl, rails, ramps. Same 3D style
   // as the apartment, part of her world, not a side game.
-  park:     { id: "park",     label: "Skate Park",  x0: 3,   x1: 11 }
+  park:     { id: "park",     label: "Skate Park",  x0: 3,   x1: 11 },
+  // Builder World (2.4.22): the open field south of the park — build
+  // anything from shapes, then walk around in it.
+  builder:  { id: "builder",  label: "Builder World", x0: 2, x1: 12 }
 };
 const ROOM_ORDER = ["bedroom", "living", "kitchen", "bathroom", "ritual"];
 const Z_BACK = -4, Z_FRONT = 3.4, WALL_H = 3.4, HALL_Z = 1.9;
@@ -134,7 +181,8 @@ export const SPOTS = {
   halfpipe:       { room: "park",     x: 4.6,   z: 15.2 },
   rail:           { room: "park",     x: 6.0,   z: 13.2 },
   bowl:           { room: "park",     x: 9.3,   z: 15.0 },
-  ramp:           { room: "park",     x: 9.0,   z: 10.6 }
+  ramp:           { room: "park",     x: 9.0,   z: 10.6 },
+  builder_center: { room: "builder",  x: 7.0,   z: 22.0 }
 };
 export const ROOM_SPOTS = {
   bedroom: ["bedside", "vanity", "nightstand", "bedroom_center", "bed", "window"],
@@ -143,9 +191,13 @@ export const ROOM_SPOTS = {
   bathroom: ["sink", "bath_center", "tub"],
   yard: ["yard_center", "pond", "flowers", "bench", "sakura", "hammock", "bamboo"],
   ritual: ["ritual_center", "altar", "ritual_rug", "ritual_mirror", "staff"],
-  park: ["park_center", "halfpipe", "rail", "bowl", "ramp"]
+  park: ["park_center", "halfpipe", "rail", "bowl", "ramp"],
+  builder: ["builder_center"]
 };
 export function roomAt(x, z) {
+  // Builder World (2.4.22) sits south of the park (z > 17.5, x 2..12) —
+  // check it before the park, which shares the same x range further north.
+  if (z != null && z > 17.5 && x >= 2 && x <= 12) return "builder";
   // The park sits south of the yard fence (z > 8.2, x 3..11) — check it
   // before the yard, which shares the same x range closer to the house.
   if (z != null && z > 8.2 && x >= 3 && x < 11) return "park";
@@ -850,6 +902,11 @@ export function createWorld(opts) {
   parkLamp.position.set(7, 3.6, 12.6);
   scene.add(parkLamp);
   roomLights.park = { light: parkLamp, mode: 1, base: 14, shades: [], glows: [] };
+  // Builder World (2.4.22) gets the same treatment: its own moon lamp.
+  const builderLamp = new THREE.PointLight(0xcfd8ff, 14, 14, 1.25);
+  builderLamp.position.set(7, 3.6, 22);
+  scene.add(builderLamp);
+  roomLights.builder = { light: builderLamp, mode: 1, base: 14, shades: [], glows: [] };
 
   /* ------------ shell: floors, walls, partitions */
   const floorTex = {
@@ -1151,6 +1208,59 @@ export function createWorld(opts) {
     eye.position.set(10.4 + ex, 1.14, 16.75); parkSkullG.add(eye);
   }
   tagged(parkSkullG, "parkskull");
+
+  /* ------------ Builder World field (2.4.22): the open ground south of
+     the park — dark stone, low fences, a gate in the park's south fence
+     and a sign over it. This is where shapes get built; the field floor
+     is tappable like the park slab, and the gate walks everyone down
+     here. Her world, in memory of the world taken from Emmi. */
+  const builderSlab = new THREE.Mesh(new THREE.PlaneGeometry(10, 9), new THREE.MeshLambertMaterial({ color: 0x241f28 }));
+  builderSlab.rotation.x = -Math.PI / 2; builderSlab.position.set(7, 0.004, 22); scene.add(builderSlab);
+  builderSlab.userData.tap = "floor"; tappables.push(builderSlab);
+  // Low fence on the east, west and south sides (the north side is the
+  // park fence with the builder gate in it).
+  for (let z = 18.0; z <= 26.2; z += 1.15) { fencePost(2.2, z); fencePost(11.8, z); }
+  fenceRailZ(2.2, 17.6, 26.4, 0.35); fenceRailZ(2.2, 17.6, 26.4, 0.65);
+  fenceRailZ(11.8, 17.6, 26.4, 0.35); fenceRailZ(11.8, 17.6, 26.4, 0.65);
+  for (let x = 2.5; x <= 11.6; x += 1.15) fencePost(x, 26.4);
+  fenceRail(2.2, 11.8, 26.4, 0.35); fenceRail(2.2, 11.8, 26.4, 0.65);
+  // The builder gate: two tall posts with pointed caps + an arched top
+  // rail in the park's south fence, lined up with the park gate.
+  const builderGateG = new THREE.Group(); scene.add(builderGateG);
+  for (const px of [6.3, 7.7]) {
+    box(0.12, 1.3, 0.12, mat.darkWood, px, 0.65, 17.2, builderGateG);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.25, 4), mat.gold);
+    cap.position.set(px, 1.42, 17.2); builderGateG.add(cap);
+  }
+  const builderGateArch = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.05, 8, 20, Math.PI), mat.gold);
+  builderGateArch.position.set(7.0, 1.3, 17.2); builderGateG.add(builderGateArch);
+  tagged(builderGateG, "buildergate");
+  // The sign over the gate — goth violet on black, like the park sign.
+  const builderSignTex = canvasTex(512, 128, (g, w, h) => {
+    g.fillStyle = "#0d0a10"; g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#b8902e"; g.lineWidth = 6; g.strokeRect(5, 5, w - 10, h - 10);
+    g.fillStyle = "#b04bff"; g.font = "bold 52px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("BUILDER WORLD", w / 2, h / 2 + 2);
+  });
+  const builderSign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshLambertMaterial({ map: builderSignTex }));
+  builderSign.position.set(7.0, 2.1, 17.35); scene.add(builderSign);
+  for (const sx of [5.8, 8.2]) box(0.08, 2.1, 0.08, mat.darkWood, sx, 1.05, 17.35);
+  tagged(builderSign, "buildersign");
+  // Violet corner torches so the field reads at night, and a skull on a
+  // post by the south fence — goth field, obviously.
+  for (const [tx, tz] of [[2.6, 18.2], [11.4, 18.2], [2.6, 25.8], [11.4, 25.8]]) {
+    cyl(0.05, 0.06, 1.0, mat.darkWood, tx, 0.5, tz, 8);
+    glowSprite(0xb04bff, 0.9, tx, 1.15, tz, null, 0.5);
+  }
+  const builderSkullG = new THREE.Group(); scene.add(builderSkullG);
+  cyl(0.05, 0.06, 1.0, mat.darkWood, 3.0, 0.5, 25.8, 8, builderSkullG);
+  const bSkullBall = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), mat.skull);
+  bSkullBall.position.set(3.0, 1.12, 25.8); builderSkullG.add(bSkullBall);
+  for (const ex of [-0.06, 0.06]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat.black);
+    eye.position.set(3.0 + ex, 1.14, 25.65); builderSkullG.add(eye);
+  }
+  tagged(builderSkullG, "builderskull");
 
   /* ------------ ritual room (2.4.7): altar, candles, crystal ball ------ */
   // Pentagram rug in the middle of the room.
@@ -1805,11 +1915,13 @@ export function createWorld(opts) {
      only, and nothing about her private side goes to the shared world. */
   const GUEST_HEIGHT = 1.86; // 2.4.17: Autumn 5'8" (1.86) — was 1.7
   const GUEST_MODEL = "Autumn_Tripo3d_0_ggkz.glb";
+  const GUEST_VERSION = "2418"; // 2.4.22: her file last changed in 2.4.18 (head_match) — bump ONLY when her file actually changes
   const GUEST_PARTS = 5; // chunked upload: .part0..4, 14,466,422 bytes each (last 14,466,420) — 2.4.18 head_match bake grew the file to 72,332,108 bytes
   // Summer (2.4.14) — 1.78 units, the 5'5" anchor of the 2.4.17 balance.
   // She is now 0.03 shorter than Aimmianna (1.81), not level with her.
   const SUMMER_HEIGHT = 1.78;
   const SUMMER_MODEL = "Summer_0_cy1n.glb";
+  const SUMMER_VERSION = "2420"; // 2.4.22: her file last changed in 2.4.20 (reshape) — bump ONLY when her file actually changes
   const SUMMER_PARTS = 5; // chunked upload: .part0..4, 14,395,229 bytes each (last 14,395,228) — 2.4.20 reshape grew the file to 71,976,144 bytes
   /* Chunked GLB loader (2.4.14 patch) — the git push to github.com is
      blocked, so big models ship as ~16 MB pieces through the Contents
@@ -1817,13 +1929,19 @@ export function createWorld(opts) {
      back together, and parse the reassembled buffer exactly as if it
      were the single file. A failed part throws, and the caller's
      try/catch leaves the shared apartment open with the guest simply
-     absent — the same graceful failure as a missing file. */
-  async function loadChunkedGlb(loader, modelFile, partCount) {
+     absent — the same graceful failure as a missing file.
+     2.4.22: every chunk URL carries the model's own ?v= query, so the
+     service worker's persistent models cache keys by full URL — a new
+     app version re-downloads ONLY the models whose file actually
+     changed, the rest stay warm. The part buffers are dropped as soon
+     as the combined buffer is built, so the phone never holds two
+     copies of a 72 MB model at once. */
+  async function loadChunkedGlb(loader, modelFile, partCount, version) {
     const base = new URL(`./assets/models/${modelFile}`, import.meta.url).href;
     const buffers = [];
     let total = 0;
     for (let i = 0; i < partCount; i++) {
-      const res = await fetch(`${base}.part${i}`);
+      const res = await fetch(`${base}.part${i}?v=${version || "1"}`);
       if (!res.ok) throw new Error(`Guest model part ${i} of ${modelFile} failed: HTTP ${res.status}`);
       const buf = await res.arrayBuffer();
       buffers.push(buf);
@@ -1832,6 +1950,7 @@ export function createWorld(opts) {
     const combined = new Uint8Array(total);
     let offset = 0;
     for (const buf of buffers) { combined.set(new Uint8Array(buf), offset); offset += buf.byteLength; }
+    buffers.length = 0; // 2.4.22: drop the parts — the combined buffer is the only copy now
     return new Promise((resolve, reject) => loader.parse(combined.buffer, base, resolve, reject));
   }
   // 2.4.16: Summer's relaxed idle arms. Her GLB has no idle clip, so with
@@ -1852,9 +1971,10 @@ export function createWorld(opts) {
     R_Forearm: [{ axis: [-0.403, -0.875, -0.267], angle: 0.3282 }],
   };
   class GuestAvatar {
-    constructor(modelFile, partCount, height, groupName, tapTag, relaxedIdle = false) {
+    constructor(modelFile, partCount, height, groupName, tapTag, relaxedIdle = false, version = "1") {
       this.modelFile = modelFile;
       this.partCount = partCount;
+      this.version = version; // 2.4.22: per-model ?v= query for the chunk URLs
       this.height = height;
       this.group = new THREE.Group();
       this.group.name = groupName;
@@ -1862,6 +1982,10 @@ export function createWorld(opts) {
       this.group.visible = false; // shown once the model lands
       this.model = null; this.mixer = null; this.actions = null;
       this.motion = null; this.modelFailed = false;
+      // 2.4.22: while Apartment Life runs, the shared Tony steps out of
+      // sight (see setLifeFigures) — this flag stops his load() from
+      // showing him again if he lands mid-Life.
+      this.suppressVisible = false;
       // 2.4.15: relaxed-idle arms (Summer only — her file has no idle clip).
       this.relaxedIdle = relaxedIdle;
       this.idleArmBones = {};
@@ -1877,7 +2001,7 @@ export function createWorld(opts) {
       try {
         const { GLTFLoader } = await import("./vendor/loaders/GLTFLoader.js");
         const loader = new GLTFLoader();
-        const gltf = await loadChunkedGlb(loader, this.modelFile, this.partCount);
+        const gltf = await loadChunkedGlb(loader, this.modelFile, this.partCount, this.version);
         const { scene: model, animations } = gltf;
         this.mixer = new THREE.AnimationMixer(model);
         this.actions = Object.fromEntries(animations.map((clip) => [clip.name, this.mixer.clipAction(clip)]));
@@ -1915,7 +2039,7 @@ export function createWorld(opts) {
         // plays and before the idle layer runs, so the layer can always
         // set the arms from a known base instead of accumulating.
         if (this.relaxedIdle) for (const name of Object.keys(this.idleArmBones)) this._idleArmBind[name] = this.idleArmBones[name].quaternion.clone();
-        this.group.visible = true;
+        this.group.visible = !this.suppressVisible; // 2.4.22: stay hidden if Life is running
         this.playMotion("idle");
         this.mixer.update(0);
       } catch (error) {
@@ -1998,19 +2122,94 @@ export function createWorld(opts) {
       }
     }
   }
+
+  /* ------------ Who is logged in here (2.4.22 — Tony's rule) --------
+     "Not load until they are controling them" / "If they arent logged
+     in dont load them." Aimmianna always loads — she lives here. A
+     guest's avatar exists ONLY when that guest is the one logged in on
+     THIS device: Tony's when the device role is Tony, Summer's when
+     the logged-in guest is Summer, Autumn's when it's Autumn. Anyone
+     not logged in here is never constructed — no model fetch, no parse,
+     no figure in the scene — and the lazy arrival below only ever
+     loads whoever IS supposed to be here. The app passes a live
+     reader; setLoggedIn() (exposed on the world API) rebuilds the
+     guest set when the login changes mid-session. */
+  const whoIsLoggedIn = opts.whoIsLoggedIn || (() => null);
+  let loggedIn = whoIsLoggedIn();
+
+  // Aura discs (2.4.19): a soft glow under each figure's feet — same
+  // style for everyone (CircleGeometry 0.5, additive, opacity 0.22,
+  // 0.02 above the floor, always on, a child of the figure's group so
+  // it follows them). Summer's follows her outfit pick's accent (see
+  // applySummerWardrobe); the others use a fixed signature colour.
+  // The discs are made once here, before any guest avatar, so the
+  // factories below can attach them.
+  function makeAuraDisc(color) {
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.5, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 0.02;
+    return disc;
+  }
+  const aimmiannaAura = makeAuraDisc(0x8a0f2e); // her deep crimson
+  avatar.object3d.add(aimmiannaAura);
+  const autumnAura = makeAuraDisc(0x8a4fbf); // lilac purple
+  const summerAura = makeAuraDisc(0x8a0f2e); // follows her outfit accent
+  const tonyAura = makeAuraDisc(0xbf3a1e); // ember red
+
+  function makeAutumnAvatar() {
+    const a = new GuestAvatar(GUEST_MODEL, GUEST_PARTS, GUEST_HEIGHT, "Autumn3D", "guest", false, GUEST_VERSION);
+    scene.add(a.group);
+    a.group.position.copy(guest.pos);
+    a.group.add(autumnAura);
+    return a;
+  }
+  function makeSummerAvatar() {
+    const a = new GuestAvatar(SUMMER_MODEL, SUMMER_PARTS, SUMMER_HEIGHT, "Summer3D", "guestSummer", true, SUMMER_VERSION);
+    scene.add(a.group);
+    a.group.position.copy(summer.pos);
+    a.group.add(summerAura);
+    return a;
+  }
+  function makeTonyAvatar() {
+    const a = new GuestAvatar(TONY_MODEL, TONY_PARTS, TONY_HEIGHT, "Tony3D", "guestTony", false, TONY_VERSION);
+    scene.add(a.group);
+    a.group.position.copy(tony.pos);
+    a.group.add(tonyAura);
+    return a;
+  }
+  // Tear a guest down when they are no longer the one logged in here:
+  // off the scene, GPU buffers freed, so the phone gets the memory
+  // back. The aura disc is NOT disposed — it re-attaches to the next
+  // build of that guest.
+  function disposeGuestAvatar(av) {
+    if (!av) return;
+    if (av.mixer) av.mixer.stopAllAction();
+    if (av.model) av.model.traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry?.dispose();
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      ms.forEach((m) => m?.dispose?.());
+    });
+    av.group.removeFromParent();
+  }
+
   // Autumn's presence in the shared apartment: she stands beside
   // Aimmianna and walks with her when the floor is tapped — never static.
   const guest = {
     pos: new THREE.Vector3(SPOTS.living_center.x + 0.65, 0, SPOTS.living_center.z + 0.35),
     heading: 0, moving: false, emoteLeft: 0, heartPending: false,
+    path: [], arriveCb: null, // 2.4.22: her own walk path — she no longer follows Aimmianna
   };
   const guestTmp = new THREE.Vector3();
-  const guestAvatar = new GuestAvatar(GUEST_MODEL, GUEST_PARTS, GUEST_HEIGHT, "Autumn3D", "guest");
-  scene.add(guestAvatar.group);
-  guestAvatar.group.position.copy(guest.pos);
-  guestAvatar.load(); // background — never blocks the apartment opening
+  // 2.4.22: only built when Autumn is the one logged in here.
+  let guestAvatar = loggedIn === "autumn" ? makeAutumnAvatar() : null;
+  // 2.4.22: NO load() here — guests arrive one at a time after the room
+  // opens (see loadGuestsSequentially, after Tony's section).
   function guestEmote(name) {
-    if (!guestAvatar.actions) return false;
+    if (!guestAvatar || !guestAvatar.actions) return false;
     if (!guestAvatar.playMotion(name)) return false;
     guest.emoteLeft = guestAvatar.actions[name].getClip().duration;
     guest.heartPending = name === "hug"; // a hug ends with heart hands
@@ -2030,50 +2229,20 @@ export function createWorld(opts) {
   const summer = {
     pos: new THREE.Vector3(SPOTS.living_center.x - 0.65, 0, SPOTS.living_center.z + 0.35),
     heading: 0, moving: false, emoteLeft: 0, heartPending: false,
+    path: [], arriveCb: null, // 2.4.22: her own walk path — she no longer follows Aimmianna
   };
   const summerTmp = new THREE.Vector3();
-  const summerAvatar = new GuestAvatar(SUMMER_MODEL, SUMMER_PARTS, SUMMER_HEIGHT, "Summer3D", "guestSummer", true); // 2.4.15: relaxed-idle arms — her file has no idle clip
-  scene.add(summerAvatar.group);
-  summerAvatar.group.position.copy(summer.pos);
-  summerAvatar.load(); // background — never blocks the apartment opening
+  // 2.4.22: only built when Summer is the one logged in here.
+  let summerAvatar = loggedIn === "summer" ? makeSummerAvatar() : null;
+  // 2.4.22: NO load() here — guests arrive one at a time after the room
+  // opens (see loadGuestsSequentially, after Tony's section).
   function summerEmote(name) {
-    if (!summerAvatar.actions) return false;
+    if (!summerAvatar || !summerAvatar.actions) return false;
     if (!summerAvatar.playMotion(name)) return false;
     summer.emoteLeft = summerAvatar.actions[name].getClip().duration;
     summer.heartPending = name === "hug"; // a hug ends with heart hands
     return true;
   }
-  // A soft glow disc under her feet, coloured by her current outfit —
-  // the visible part of her wardrobe (see below).
-  const summerAura = new THREE.Mesh(
-    new THREE.CircleGeometry(0.5, 32),
-    new THREE.MeshBasicMaterial({ color: 0x8a0f2e, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
-  );
-  summerAura.rotation.x = -Math.PI / 2;
-  summerAura.position.y = 0.02;
-  summerAvatar.group.add(summerAura);
-
-  // Aura circles for everyone (2.4.19): Summer already had one — now
-  // Aimmianna, Autumn and Tony get the same disc in the same style
-  // (CircleGeometry 0.5, additive glow, opacity 0.22, 0.02 above the
-  // floor, always on, a child of each figure's group so it follows
-  // them). Summer's follows her outfit pick's accent (see
-  // applySummerWardrobe); the others use a fixed signature colour —
-  // Tony's shared slot has no wardrobe and Autumn has none yet, and
-  // Aimmianna's outfits carry no accent field.
-  function makeAuraDisc(color) {
-    const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(0.5, 32),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
-    );
-    disc.rotation.x = -Math.PI / 2;
-    disc.position.y = 0.02;
-    return disc;
-  }
-  const aimmiannaAura = makeAuraDisc(0x8a0f2e); // her deep crimson
-  avatar.object3d.add(aimmiannaAura);
-  const autumnAura = makeAuraDisc(0x8a4fbf); // lilac purple
-  guestAvatar.group.add(autumnAura);
 
   /* ------------ Tony — his own figure in the shared apartment (2.4.15) --
      Tony asked for his figure in BOTH places: his private Game Mode figure
@@ -2094,20 +2263,94 @@ export function createWorld(opts) {
      wiring of any kind. */
   const TONY_HEIGHT = 1.92; // 2.4.17: Tony 5'10" (1.92) — was 1.78
   const TONY_MODEL = "Tony_0_7ymz.glb";
+  const TONY_VERSION = "2418"; // 2.4.22: his file last changed in 2.4.18 (head_match) — bump ONLY when his file actually changes
   const TONY_PARTS = 5; // chunked upload: .part0..4, 12,603,391 bytes each (last 12,603,388) — 2.4.18 head_match bake grew the file to 63,016,952 bytes
   const tony = {
     pos: new THREE.Vector3(SPOTS.living_center.x, 0, SPOTS.living_center.z + 0.55),
     heading: 0, moving: false, emoteLeft: 0, heartPending: false,
+    path: [], arriveCb: null, // 2.4.22: his own walk path — he no longer follows Aimmianna
   };
   const tonyTmp = new THREE.Vector3();
-  const tonyAvatar = new GuestAvatar(TONY_MODEL, TONY_PARTS, TONY_HEIGHT, "Tony3D", "guestTony");
-  scene.add(tonyAvatar.group);
-  tonyAvatar.group.position.copy(tony.pos);
-  tonyAvatar.load(); // background — never blocks the apartment opening
-  const tonyAura = makeAuraDisc(0xbf3a1e); // ember red — same style as Summer's, always on
-  tonyAvatar.group.add(tonyAura);
+  // 2.4.22: only built when Tony is the one logged in here.
+  let tonyAvatar = loggedIn === "tony" ? makeTonyAvatar() : null;
+  // 2.4.22: NO load() here either.
+
+  /* ------------ Lazy guest arrival (2.4.22 — the iPhone crash fix) ------
+     2.4.21 crashed Safari on Tony's iPhone on load: the new version's
+     service worker deleted the old cache on activate, so the first load
+     had a COLD cache and all three guest models fired at once at boot —
+     ~200 MB fetched and parsed in parallel (15 chunk fetches + 3 GLB
+     parses) while the worker wrote them all into the version cache. iOS
+     killed the page for memory (jetsam). The old version worked because
+     those models were already cached on the phone, and every earlier
+     deploy only added ONE model at a time.
+     Now Aimmianna + the room open first, and the guests arrive ONE AT A
+     TIME afterwards, each awaited before the next starts, with a short
+     breather between them so the phone's memory can settle. A guest
+     that fails still just stays absent; the apartment stays open.
+     And since Tony's login rule, the queue is whoever IS logged in
+     here — usually just one guest, so the phone only ever swallows
+     one model after the room opens. */
+  let guestLoadRunning = false;
+  function pendingGuestLoads() {
+    return [
+      { key: "autumn", label: "Autumn" },
+      { key: "summer", label: "Summer" },
+      { key: "tony", label: "Tony" },
+    ].filter((g) => {
+      const av = g.key === "autumn" ? guestAvatar : g.key === "summer" ? summerAvatar : tonyAvatar;
+      return av && !av.model && !av.modelFailed;
+    });
+  }
+  function liveGuestAvatar(key) {
+    return key === "autumn" ? guestAvatar : key === "summer" ? summerAvatar : tonyAvatar;
+  }
+  async function loadGuestsSequentially() {
+    if (guestLoadRunning) return;
+    const pending = pendingGuestLoads();
+    if (!pending.length) return; // nobody logged in here, or everyone already here
+    guestLoadRunning = true;
+    const onStatus = opts.onGuestStatus || (() => {});
+    onStatus(pending.length > 1 ? "Bringing everyone in…" : "Bringing " + pending[0].label + " in…");
+    try {
+      for (const g of pending) {
+        const av = liveGuestAvatar(g.key); // re-read live: a logout mid-load tears it down
+        if (!av || av.model || av.modelFailed) continue;
+        await av.load(); // load() catches its own failures; a failed guest just stays absent
+        onStatus(av.model ? g.label + "'s here…" : g.label + " couldn't make it — the rest are still coming…");
+        // Breathe between guests so the phone's memory can settle.
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } finally {
+      guestLoadRunning = false;
+      onStatus("");
+    }
+  }
+  // Start after the room opens — a short delay so Aimmianna + the first
+  // frame get the phone's full attention first.
+  setTimeout(loadGuestsSequentially, 1200);
+  // The login changed mid-session (a guest just entered their code, or
+  // Tony picked his phone): build whoever should be here now, tear down
+  // whoever shouldn't, and load anyone newly built — one at a time.
+  function setLoggedIn(who) {
+    loggedIn = who || null;
+    if (loggedIn === "autumn" && !guestAvatar) guestAvatar = makeAutumnAvatar();
+    else if (loggedIn !== "autumn" && guestAvatar) { disposeGuestAvatar(guestAvatar); guestAvatar = null; }
+    if (loggedIn === "summer" && !summerAvatar) summerAvatar = makeSummerAvatar();
+    else if (loggedIn !== "summer" && summerAvatar) { disposeGuestAvatar(summerAvatar); summerAvatar = null; }
+    if (loggedIn === "tony" && !tonyAvatar) tonyAvatar = makeTonyAvatar();
+    else if (loggedIn !== "tony" && tonyAvatar) { disposeGuestAvatar(tonyAvatar); tonyAvatar = null; }
+    loadGuestsSequentially();
+  }
+  function getGuests() {
+    return {
+      autumn: { ready: !!(guestAvatar && guestAvatar.model), failed: !!(guestAvatar && guestAvatar.modelFailed), visible: !!(guestAvatar && guestAvatar.group.visible) },
+      summer: { ready: !!(summerAvatar && summerAvatar.model), failed: !!(summerAvatar && summerAvatar.modelFailed), visible: !!(summerAvatar && summerAvatar.group.visible) },
+      tony: { ready: !!(tonyAvatar && tonyAvatar.model), failed: !!(tonyAvatar && tonyAvatar.modelFailed), visible: !!(tonyAvatar && tonyAvatar.group.visible) },
+    };
+  }
   function tonyEmote(name) {
-    if (!tonyAvatar.actions) return false;
+    if (!tonyAvatar || !tonyAvatar.actions) return false;
     if (!tonyAvatar.playMotion(name)) return false;
     tony.emoteLeft = tonyAvatar.actions[name].getClip().duration;
     tony.heartPending = name === "hug"; // a hug ends with heart hands
@@ -2142,9 +2385,9 @@ export function createWorld(opts) {
   };
   function skateFigure(rider) {
     if (rider === "aimmianna") return { pos: her.pos, group: avatar.object3d, isHer: true };
-    if (rider === "autumn") return { pos: guest.pos, group: guestAvatar.group };
-    if (rider === "summer") return { pos: summer.pos, group: summerAvatar.group };
-    if (rider === "tony") return { pos: tony.pos, group: tonyAvatar.group };
+    if (rider === "autumn") return guestAvatar ? { pos: guest.pos, group: guestAvatar.group } : null;
+    if (rider === "summer") return summerAvatar ? { pos: summer.pos, group: summerAvatar.group } : null;
+    if (rider === "tony") return tonyAvatar ? { pos: tony.pos, group: tonyAvatar.group } : null;
     return null;
   }
   function buildSkateboard(spec) {
@@ -2230,6 +2473,7 @@ export function createWorld(opts) {
   }
   function skateStart(rider) {
     if (!skateFigure(rider)) return { ok: false, error: "unknown rider" };
+    if (cart && cart.driving) builderDrive("out"); // driving and riding can't both own her position
     skate.picked = rider;
     skate.riders.add(rider);
     if (rider !== "aimmianna") skate.riders.add("aimmianna"); // she always rides with them
@@ -2240,7 +2484,7 @@ export function createWorld(opts) {
   function skateStop() {
     skate.riders.clear();
     skate.trick = null;
-    for (const av of [guestAvatar, summerAvatar, tonyAvatar]) av.skating = false;
+    for (const av of [guestAvatar, summerAvatar, tonyAvatar]) if (av) av.skating = false;
     her.speed = 1.55;
     syncSkateVisibility();
     return { ok: true };
@@ -2328,6 +2572,268 @@ export function createWorld(opts) {
     }
   }
 
+  /* ------------ Builder World (2.4.22) -----------------------------------
+     Build anything from simple 3D shapes in the field south of the park,
+     then walk around in it and stand on what was built. Shapes are plain
+     data — { id, shape, x, z, w, h, d, rotY, color, finish, builtBy } —
+     the world builds meshes from them, so a saved world is just a list
+     of specs. builtBy tags who made it: "tony", "aimmianna", "summer",
+     "autumn". Her builds are HERS: the panel asks her first
+     (requestHerApproval in app.js) before any edit or removal — the
+     world itself never edits a her-built shape on its own. Ramps and
+     roofs are real slopes: builderGroundAt returns the top of the
+     highest shape under a point, so the walk tick lifts everyone onto
+     platforms and up ramps instead of clipping through them. */
+  const builder = { shapes: [], meshes: new Map(), selected: null, placing: null, seq: 0 };
+  let selectHelper = null;
+  function builderResolveColor(c) {
+    const p = BUILDER_PALETTE.find((o) => o.id === c || o.hex === c);
+    if (p) return p.hex;
+    if (typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)) return c;
+    return "#8a0f2e";
+  }
+  function builderResolveFinish(f) {
+    return BUILDER_FINISHES.some((o) => o.id === f) ? f : "matte";
+  }
+  function builderMaterial(colorHex, finish) {
+    const c = new THREE.Color(colorHex);
+    if (finish === "glow") return new THREE.MeshBasicMaterial({ color: c });
+    if (finish === "metal") return new THREE.MeshLambertMaterial({ color: c, emissive: new THREE.Color(colorHex).multiplyScalar(0.18) });
+    if (finish === "stone") return new THREE.MeshLambertMaterial({ color: c.clone().lerp(new THREE.Color(0x8a8a8a), 0.45) });
+    if (finish === "wood") return new THREE.MeshLambertMaterial({ color: c.clone().lerp(new THREE.Color(0x4a2a18), 0.55) });
+    return new THREE.MeshLambertMaterial({ color: c });
+  }
+  function builderTriGeometry(len, h, peak) {
+    // A triangular prism: right triangle (ramp) when peak is at the far
+    // end, isosceles (roof) when peak is in the middle. Built in shape
+    // space — length along x, height along y, extruded along z — then
+    // rotated so the length runs along world z.
+    const s = new THREE.Shape();
+    s.moveTo(0, 0); s.lineTo(len, 0); s.lineTo(peak ? len / 2 : len, h); s.closePath();
+    return new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false });
+  }
+  function builderGeometry(shape, w, h, d) {
+    let g;
+    if (shape === "cylinder") g = new THREE.CylinderGeometry(w / 2, w / 2, h, 20);
+    else if (shape === "sphere") g = new THREE.SphereGeometry(w / 2, 20, 14);
+    else if (shape === "torus") g = new THREE.TorusGeometry(w / 2, 0.09, 10, 28);
+    else if (shape === "ramp") { g = builderTriGeometry(d, h, false); g.rotateY(-Math.PI / 2); g.scale(w, 1, 1); }
+    else if (shape === "wedge") { g = builderTriGeometry(d, h, true); g.rotateY(-Math.PI / 2); g.scale(w, 1, 1); }
+    else if (shape === "platform") g = new THREE.BoxGeometry(w, 0.08, d);
+    else g = new THREE.BoxGeometry(w, h, d);
+    // Centre x/z on the shape's own footprint, base at y = 0.
+    g.computeBoundingBox();
+    const bb = g.boundingBox;
+    g.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+    return g;
+  }
+  function buildShapeMesh(spec) {
+    const mesh = new THREE.Mesh(builderGeometry(spec.shape, spec.w, spec.h, spec.d), builderMaterial(spec.color, spec.finish));
+    mesh.position.set(spec.x, 0, spec.z);
+    mesh.rotation.y = (spec.rotY || 0) * Math.PI / 180;
+    mesh.userData.tap = "builderShape";
+    mesh.userData.builderId = spec.id;
+    scene.add(mesh);
+    tappables.push(mesh);
+    return mesh;
+  }
+  function builderDisposeMesh(mesh) {
+    if (!mesh) return;
+    mesh.parent?.remove(mesh);
+    const ti = tappables.indexOf(mesh);
+    if (ti !== -1) tappables.splice(ti, 1);
+    mesh.traverse((m) => { if (m.isMesh) { m.geometry.dispose(); m.material.dispose(); } });
+  }
+  function builderClearSelection() {
+    builder.selected = null;
+    if (selectHelper) { selectHelper.parent?.remove(selectHelper); selectHelper.geometry.dispose(); selectHelper.material.dispose(); selectHelper = null; }
+  }
+  function builderValidate(spec) {
+    const s = { ...(spec || {}) };
+    if (!BUILDER_SHAPES.some((o) => o.id === s.shape)) return null;
+    s.w = THREE.MathUtils.clamp(Number(s.w) || 1.2, 0.3, 3.5);
+    s.h = THREE.MathUtils.clamp(Number(s.h) || 1.2, 0.3, 3.5);
+    s.d = THREE.MathUtils.clamp(Number(s.d) || 1.2, 0.3, 3.5);
+    if (s.shape === "platform") s.h = 0.08;
+    s.x = THREE.MathUtils.clamp(Number(s.x) || 7, BUILDER_FIELD.x0 + 0.3, BUILDER_FIELD.x1 - 0.3);
+    s.z = THREE.MathUtils.clamp(Number(s.z) || 22, BUILDER_FIELD.z0 + 0.3, BUILDER_FIELD.z1 - 0.3);
+    s.rotY = ((Number(s.rotY) || 0) % 360 + 360) % 360;
+    s.color = builderResolveColor(s.color);
+    s.finish = builderResolveFinish(s.finish);
+    s.builtBy = BUILDER_BUILDERS.indexOf(s.builtBy) !== -1 ? s.builtBy : "tony";
+    return s;
+  }
+  function builderAdd(spec) {
+    const s = builderValidate(spec);
+    if (!s) return { ok: false, error: "unknown shape" };
+    s.id = typeof spec.id === "string" && spec.id ? spec.id : "b" + (++builder.seq) + "_" + Date.now().toString(36);
+    if (builder.meshes.has(s.id)) s.id = "b" + (++builder.seq) + "_" + Date.now().toString(36);
+    builder.shapes.push(s);
+    builder.meshes.set(s.id, buildShapeMesh(s));
+    return { ok: true, shape: { ...s } };
+  }
+  function builderUpdate(id, changes) {
+    const s = builder.shapes.find((o) => o.id === id);
+    if (!s) return { ok: false, error: "unknown shape" };
+    // Shape type and builder are history — changing them means delete +
+    // re-add. Everything else re-validates and rebuilds the mesh.
+    const next = builderValidate({ ...s, ...(changes || {}), shape: s.shape, builtBy: s.builtBy });
+    if (!next) return { ok: false, error: "bad change" };
+    next.id = s.id;
+    Object.assign(s, next);
+    builderDisposeMesh(builder.meshes.get(id));
+    builder.meshes.set(id, buildShapeMesh(s));
+    if (builder.selected === id) builderSelect(id);
+    return { ok: true, shape: { ...s } };
+  }
+  function builderRemove(id) {
+    const i = builder.shapes.findIndex((o) => o.id === id);
+    if (i === -1) return { ok: false, error: "unknown shape" };
+    if (builder.selected === id) builderClearSelection();
+    builderDisposeMesh(builder.meshes.get(id));
+    builder.meshes.delete(id);
+    builder.shapes.splice(i, 1);
+    return { ok: true };
+  }
+  function builderSetShapes(list) {
+    for (const s of [...builder.shapes]) builderRemove(s.id);
+    builderClearSelection();
+    let count = 0;
+    for (const spec of Array.isArray(list) ? list : []) {
+      const r = builderAdd(spec);
+      if (r.ok) count++;
+    }
+    return { ok: true, count };
+  }
+  function builderSelect(id) {
+    builderClearSelection();
+    const mesh = builder.meshes.get(id);
+    if (!mesh) return { ok: false, error: "unknown shape" };
+    builder.selected = id;
+    selectHelper = new THREE.BoxHelper(mesh, 0xffd94a);
+    scene.add(selectHelper);
+    return { ok: true, id };
+  }
+  function builderSetPlacing(shapeId) {
+    builder.placing = BUILDER_SHAPES.some((o) => o.id === shapeId) ? shapeId : null;
+    return { ok: true, placing: builder.placing };
+  }
+  function builderLocal(spec, x, z) {
+    const rot = (spec.rotY || 0) * Math.PI / 180;
+    const dx = x - spec.x, dz = z - spec.z;
+    return { x: dx * Math.cos(rot) + dz * Math.sin(rot), z: -dx * Math.sin(rot) + dz * Math.cos(rot) };
+  }
+  function builderGroundAt(x, z) {
+    let top = 0;
+    for (const s of builder.shapes) {
+      const l = builderLocal(s, x, z);
+      const hw = s.w / 2, hd = s.d / 2;
+      let t = 0;
+      if (s.shape === "cylinder") {
+        if (l.x * l.x + l.z * l.z <= hw * hw) t = s.h;
+      } else if (s.shape === "sphere") {
+        const r = s.w / 2, d2 = l.x * l.x + l.z * l.z;
+        if (d2 <= r * r) t = r + Math.sqrt(r * r - d2);
+      } else if (s.shape === "ramp") {
+        if (Math.abs(l.x) <= hw && Math.abs(l.z) <= hd) t = s.h * (l.z + hd) / (2 * hd);
+      } else if (s.shape === "wedge") {
+        if (Math.abs(l.x) <= hw && Math.abs(l.z) <= hd) t = s.h * (1 - Math.abs(l.z) / hd);
+      } else if (s.shape === "torus") {
+        t = 0; // a ring is not something you stand on
+      } else if (Math.abs(l.x) <= hw && Math.abs(l.z) <= hd) {
+        t = s.h; // box + platform
+      }
+      if (t > top) top = t;
+    }
+    return top;
+  }
+  function builderGet() {
+    return {
+      shapes: builder.shapes.map((s) => ({ ...s })),
+      selected: builder.selected,
+      placing: builder.placing,
+      driving: !!cart.driving,
+      cart: { x: +cart.x.toFixed(2), z: +cart.z.toFixed(2), heading: +cart.heading.toFixed(2) },
+      field: { ...BUILDER_FIELD }
+    };
+  }
+  function getBuilder() { return builderGet(); }
+
+  /* ---- the Moon Cart (2.4.22): a starter vehicle, built from shapes,
+     parked in the field. It is world furniture, not a user shape — it
+     can't be edited or deleted through the builder, so it needs no
+     builtBy tag and no approval. Tap it (or Get in, in the panel) to
+     drive: forward / back set speed, left / right turn it, Get out parks
+     it. She sits in it while driving; the group follows her as usual. */
+  const cart = { group: null, x: 9.5, z: 24.5, heading: Math.PI, speed: 0, target: 0, driving: false };
+  (function buildCart() {
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2a0f1e });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.25, 1.4), bodyMat);
+    body.position.y = 0.35; g.add(body);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.6), new THREE.MeshLambertMaterial({ color: 0x3b1240 }));
+    seat.position.set(0, 0.5, -0.2); g.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.1), new THREE.MeshLambertMaterial({ color: 0x3b1240 }));
+    back.position.set(0, 0.7, -0.55); g.add(back);
+    for (const [wx, wz] of [[-0.45, 0.45], [0.45, 0.45], [-0.45, -0.45], [0.45, -0.45]]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 12), new THREE.MeshLambertMaterial({ color: 0x141414 }));
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wx, 0.16, wz); g.add(wheel);
+    }
+    for (const hx of [-0.3, 0.3]) {
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd94a }));
+      lamp.position.set(hx, 0.42, 0.72); g.add(lamp);
+    }
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat.skull);
+    skull.position.set(0, 0.55, -0.72); g.add(skull);
+    g.position.set(cart.x, 0, cart.z);
+    g.rotation.y = cart.heading;
+    scene.add(g);
+    cart.group = g;
+    tagged(g, "builderVehicle");
+  })();
+  function builderDrive(action) {
+    if (action === "in") {
+      if (cart.driving) return { ok: false, error: "already driving" };
+      skateStop(); // riding and driving can't both own her position
+      cart.driving = true;
+      her.path = [];
+      her.pose = "sit";
+      her.speed = 2.4;
+      return { ok: true, driving: true };
+    }
+    if (action === "out") {
+      if (!cart.driving) return { ok: false, error: "not driving" };
+      cart.driving = false; cart.speed = 0; cart.target = 0;
+      her.pose = null; her.speed = 1.55;
+      return { ok: true, driving: false };
+    }
+    if (!cart.driving) return { ok: false, error: "not driving" };
+    if (action === "forward") cart.target = 2.4;
+    else if (action === "back") cart.target = -1.2;
+    else if (action === "stop") cart.target = 0;
+    else if (action === "left") cart.heading += 0.3;
+    else if (action === "right") cart.heading -= 0.3;
+    else return { ok: false, error: "unknown drive action" };
+    return { ok: true, driving: true, speed: cart.target, heading: +cart.heading.toFixed(2) };
+  }
+  function updateCart(dt) {
+    if (!cart.driving) return;
+    cart.speed += (cart.target - cart.speed) * Math.min(1, dt * 3);
+    if (Math.abs(cart.speed) < 0.02 && cart.target === 0) cart.speed = 0;
+    cart.x += Math.sin(cart.heading) * cart.speed * dt;
+    cart.z += Math.cos(cart.heading) * cart.speed * dt;
+    // The cart stays in the open world — yard, park and field, never
+    // inside the apartment.
+    const cx = THREE.MathUtils.clamp(cart.x, 2.2, 11.8);
+    const cz = THREE.MathUtils.clamp(cart.z, 3.6, 26.3);
+    if (cx !== cart.x || cz !== cart.z) { cart.x = cx; cart.z = cz; cart.speed = 0; }
+    cart.group.position.set(cart.x, 0, cart.z);
+    cart.group.rotation.y = cart.heading;
+    her.pos.set(cart.x, her.pos.y, cart.z);
+    her.heading = cart.heading;
+  }
+
   /* ------------ Summer's wardrobe (2.4.14): high-class goth emo
      princess — she is a barbie doll, a princess, not a casual t-shirt
      girl. Heavy on stock from the start: outfits, shoes, makeup,
@@ -2346,7 +2852,7 @@ export function createWorld(opts) {
   function applySummerWardrobe() {
     const outfit = SUMMER_WARDROBE.outfit.find((o) => o.id === summerWardrobe.outfit) || SUMMER_WARDROBE.outfit[0];
     const dye = SUMMER_WARDROBE.dye.find((o) => o.id === summerWardrobe.dye) || SUMMER_WARDROBE.dye[0];
-    if (summerAvatar.model) {
+    if (summerAvatar && summerAvatar.model) {
       // subtle cast only — a strong tint would recolour her skin too
       summerAvatar.model.traverse((mesh) => {
         if (!mesh.isMesh) return;
@@ -2372,6 +2878,21 @@ export function createWorld(opts) {
     if (life) { life.root.visible = false; life.root.removeFromParent(); }
     if (lifeArrive) lifeArrive(false);
     lifeArrive = null; lifePath = []; lifeHeading = 0; life = figures;
+    // 2.4.22 — ONE Tony at a time: the shared apartment already has Tony
+    // standing in it, and the Life player is a second Tony (a different
+    // model file) — opening Apartment Life used to show both at once, and
+    // two full-size Tony models in one scene made it lag. While Life runs,
+    // the shared Tony steps out of sight; leaving Life brings him back.
+    // visible=false also skips his follow/walk tick (guarded on visible
+    // at the tick), so he costs nothing while hidden — hiding alone IS
+    // the full cover, no extra skip needed. He is only re-shown if his
+    // model actually landed; if he is still loading, his load()
+    // completion shows him, and suppressVisible stops that mid-Life.
+    // (No shared Tony at all when Tony isn't the one logged in here.)
+    if (tonyAvatar) {
+      tonyAvatar.suppressVisible = !!figures;
+      tonyAvatar.group.visible = figures ? false : !!tonyAvatar.model;
+    }
     if (life) {
       const s = SPOTS[spot] || SPOTS.living_center;
       life.player.position.set(s.x + .40, 0, Math.min(2.9, s.z + .45));
@@ -2418,18 +2939,60 @@ export function createWorld(opts) {
     return spot ? moveLifePlayer(spot.x + .42, spot.z + .65) : Promise.resolve(false);
   }
 
-  function planPath(tx, tz) {
+  function clampWalkPoint(x, z) {
+    x = Math.max(-13.5, Math.min(20.0, x));
+    // The park floor runs to z 17 and the builder field to z 26.5 — but
+    // only inside their x ranges; anywhere else the floor ends at the
+    // yard (z 8.0), as before.
+    const zMax = (x >= 2 && x <= 12) ? 26.5 : 8.0;
+    z = Math.max(-2.9, Math.min(zMax, z));
+    return { x, z };
+  }
+  function planPathFrom(fx, fz, tx, tz, pose) {
     const pts = [];
-    const sameRoom = roomAt(her.pos.x, her.pos.z) === roomAt(tx, tz) && Math.abs(her.pos.x - tx) < 4.5;
+    const sameRoom = roomAt(fx, fz) === roomAt(tx, tz) && Math.abs(fx - tx) < 4.5;
     if (!sameRoom) {
-      if (her.pos.z < HALL_Z - 0.2) pts.push(new THREE.Vector3(her.pos.x, 0, HALL_Z));
+      if (fz < HALL_Z - 0.2) pts.push(new THREE.Vector3(fx, 0, HALL_Z));
       pts.push(new THREE.Vector3(tx, 0, HALL_Z));
-    } else if (her.pose === "sit" || her.pose === "lie" || her.pose === "bath") {
+    } else if (pose === "sit" || pose === "lie" || pose === "bath") {
       // step out of the couch/bed/tub first
-      pts.push(new THREE.Vector3(her.pos.x + (her.pose === "lie" ? 2.2 : 0), 0, Math.max(her.pos.z, -1.0) + 0.9));
+      pts.push(new THREE.Vector3(fx + (pose === "lie" ? 2.2 : 0), 0, Math.max(fz, -1.0) + 0.9));
     }
     pts.push(new THREE.Vector3(tx, 0, tz));
     return pts;
+  }
+  function planPath(tx, tz) {
+    return planPathFrom(her.pos.x, her.pos.z, tx, tz, her.pose);
+  }
+  // 2.4.22 — a guest walks their OWN path. The person logged in on
+  // this device controls their own avatar: a floor tap on their device
+  // sends THEIR avatar here (see app.js onWorldTap). Nobody is dragged
+  // along — the tick below only walks a guest down their own path, or
+  // beside Aimmianna while they are riding a board with her.
+  function walkGuest(who, x, z) {
+    const g = who === "autumn" ? guest : who === "summer" ? summer : who === "tony" ? tony : null;
+    const av = liveGuestAvatar(who);
+    if (!g || !av || !av.model) return Promise.resolve(false);
+    const p = clampWalkPoint(x, z);
+    if (g.arriveCb) g.arriveCb(false);
+    g.path = planPathFrom(g.pos.x, g.pos.z, p.x, p.z, null);
+    g.emoteLeft = 0; g.heartPending = false;
+    return new Promise((resolve) => { g.arriveCb = resolve; });
+  }
+  // One step of a guest's own walk — same pace as her (3.2 while anyone
+  // is skating, 1.55 otherwise). g.moving says if the guest is still
+  // walking when it returns.
+  function stepGuestPath(g, dt) {
+    if (!g.path.length) { g.moving = false; return; }
+    const target = g.path[0];
+    const dx = target.x - g.pos.x, dz = target.z - g.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 0.001) g.heading = Math.atan2(dx, dz);
+    const step = her.speed * dt;
+    if (d <= step) { g.pos.x = target.x; g.pos.z = target.z; g.path.shift(); }
+    else { g.pos.x += (dx / d) * step; g.pos.z += (dz / d) * step; }
+    g.moving = g.path.length > 0;
+    if (!g.path.length && g.arriveCb) { const cb = g.arriveCb; g.arriveCb = null; cb(true); }
   }
   function goToSpot(name) {
     const s = SPOTS[name]; if (!s) return Promise.resolve(false);
@@ -2442,18 +3005,15 @@ export function createWorld(opts) {
     });
   }
   function goToPoint(x, z) {
-    x = Math.max(-13.5, Math.min(20.0, x));
-    // The park floor runs to z 17 — but only inside the park's x range;
-    // anywhere else the floor ends at the yard (z 8.0), as before.
-    const zMax = (x >= 3 && x <= 11) ? 17.0 : 8.0;
-    z = Math.max(-2.9, Math.min(zMax, z));
+    const p = clampWalkPoint(x, z);
+    x = p.x; z = p.z;
     if (her.arriveCb) her.arriveCb(false);
     her.path = planPath(x, z); her.pendingSpot = null; her.pose = null;
     return new Promise((resolve) => { her.arriveCb = resolve; });
   }
   function goToRoom(room) {
     const list = ROOM_SPOTS[room]; if (!list) return Promise.resolve(false);
-    const main = { bedroom: "bedroom_center", living: "living_center", kitchen: "counter", bathroom: "bath_center", ritual: "ritual_center", yard: "yard_center", park: "park_center" }[room];
+    const main = { bedroom: "bedroom_center", living: "living_center", kitchen: "counter", bathroom: "bath_center", ritual: "ritual_center", yard: "yard_center", park: "park_center", builder: "builder_center" }[room]; // 2.4.22: builder was missing — goToRoom("builder") silently resolved false and she stayed put (hub + panel "Go to the Builder World" both call it).
     return goToSpot(main);
   }
   function placeAt(name) {
@@ -2464,7 +3024,7 @@ export function createWorld(opts) {
 
   /* ------------ camera rig */
   const cam = {
-    mode: "follow", room: null,
+    mode: "follow", room: null, followWho: null, // 2.4.22: null = her; "tony"/"summer"/"autumn" = that guest's avatar
     pos: camera.position.clone(), look: new THREE.Vector3(-1, 1, -1),
     wantPos: new THREE.Vector3(), wantLook: new THREE.Vector3(),
     yaw: 0, pitch: 0, zoom: 1, page: 0.5,
@@ -2478,8 +3038,16 @@ export function createWorld(opts) {
     const { aspect } = viewport();
     const portrait = aspect < 0.9;
     if (cam.mode === "follow") {
-      const head = life ? life.player.position : avatar.object3d.position;
-      const lift = life ? 1.0 : her.pose === "lie" ? 0.6 : her.pose === "bath" ? 0.5 : her.pose === "sit" ? 0.7 : 1.0;
+      // 2.4.22: the camera follows whoever this device is controlling —
+      // her by default, or the logged-in guest's avatar after a floor
+      // tap sends them walking (world.setFollow(who)). A guest who was
+      // torn down (logout) falls back to her.
+      const followPos = cam.followWho === "autumn" && guestAvatar ? guestAvatar.group.position
+        : cam.followWho === "summer" && summerAvatar ? summerAvatar.group.position
+        : cam.followWho === "tony" && tonyAvatar ? tonyAvatar.group.position
+        : avatar.object3d.position;
+      const head = life ? life.player.position : followPos;
+      const lift = life || cam.followWho ? 1.0 : her.pose === "lie" ? 0.6 : her.pose === "bath" ? 0.5 : her.pose === "sit" ? 0.7 : 1.0;
       cam.wantLook.set(head.x, lift, head.z - 0.4);
       // tall phone screens: closer and looking a bit more down, so the floor fills
       // the bottom of the screen instead of empty space in front of the dollhouse
@@ -2501,7 +3069,7 @@ export function createWorld(opts) {
       cam.wantPos.set(cx + Math.sin(cam.yaw) * dist * Math.cos(el), 1.05 + Math.sin(el) * dist, lookZ + Math.cos(cam.yaw) * dist * Math.cos(el));
     }
   }
-  function setFollow() { cam.mode = "follow"; cam.room = null; cam.yaw = 0; cam.pitch = 0; cam.zoom = 1; }
+  function setFollow(who) { cam.mode = "follow"; cam.followWho = who || null; cam.room = null; cam.yaw = 0; cam.pitch = 0; cam.zoom = 1; }
   function setRoomView(room) { if (!ROOMS[room]) return; cam.mode = "room"; cam.room = room; cam.yaw = 0; cam.pitch = 0; cam.zoom = 1; }
 
   /* gyro parallax */
@@ -2594,13 +3162,13 @@ export function createWorld(opts) {
         // only count her if the hit pixel is actually opaque-ish (crude: middle 70% of the card)
         const u = h.uv; if (u && (u.x < 0.18 || u.x > 0.82)) continue;
       }
-      return { tap, point: h.point, index: (h.object.userData.candleIndex != null ? h.object.userData.candleIndex : (h.object.userData.crystalIndex != null ? h.object.userData.crystalIndex : null)) };
+      return { tap, point: h.point, index: (h.object.userData.candleIndex != null ? h.object.userData.candleIndex : (h.object.userData.crystalIndex != null ? h.object.userData.crystalIndex : null)), builderId: h.object.userData.builderId || null };
     }
     return null;
   }
   function pick(cx, cy) {
     const hit = hitAt(cx, cy);
-    if (hit) onTap(hit.tap, { point: hit.point, x: cx, y: cy, index: hit.index });
+    if (hit) onTap(hit.tap, { point: hit.point, x: cx, y: cy, index: hit.index, builderId: hit.builderId });
   }
 
   /* ------------ anchors (speech bubble, idle fx) follow her head */
@@ -2668,6 +3236,18 @@ export function createWorld(opts) {
         onArrive(her.spot);
       }
     }
+    // Builder World (2.4.22): driving the Moon Cart owns her position
+    // for the frame, and standing on what was built lifts her onto
+    // platforms and up ramps — the ground under her feet is the top of
+    // the highest shape there. Poses that set their own height (lie,
+    // bath, sit on furniture) and skate tricks keep theirs; driving
+    // still grounds her, so the cart can climb a ramp too.
+    updateCart(dt);
+    if ((!her.pose || cart.driving) && !skate.trick) {
+      const gy = builderGroundAt(her.pos.x, her.pos.z);
+      her.pos.y += (gy - her.pos.y) * Math.min(1, dt * 8);
+      if (Math.abs(gy - her.pos.y) < 0.005) her.pos.y = gy;
+    }
     avatar.object3d.position.copy(her.pos);
     const nowRoom = roomAt(her.pos.x, her.pos.z);
     if (nowRoom !== lastRoom) { lastRoom = nowRoom; her.room = nowRoom; onRoomChange(nowRoom); }
@@ -2689,16 +3269,27 @@ export function createWorld(opts) {
     const lit = LAMP_MODES[lamp.mode].i ? 1 : 0.72;
     avatar.update(dt, t, camera, { mode, moveDir: her.moveDir, heading: her.heading, brightness: lit });
 
-    // Autumn follows Aimmianna (2.4.13): she walks beside her and idles
-    // facing her, so she feels present in the shared apartment, not static.
-    if (guestAvatar.model && guestAvatar.group.visible) {
-      const sideX = Math.cos(her.heading), sideZ = -Math.sin(her.heading);
-      guestTmp.set(her.pos.x + sideX * 0.55, 0, her.pos.z + sideZ * 0.55);
-      // 2.4.20: smooth follow — followStep() closes the gap proportionally,
-      // so she glides beside Aimmianna instead of trailing and snapping.
-      const gStep = followStep(guest.pos.x, guest.pos.z, guestTmp.x, guestTmp.z, dt, her.speed);
-      if (gStep.moving) guest.heading = Math.atan2(guestTmp.x - guest.pos.x, guestTmp.z - guest.pos.z);
-      guest.pos.x = gStep.x; guest.pos.z = gStep.z; guest.moving = gStep.moving;
+    // Autumn (2.4.13): she idles facing Aimmianna and walks her OWN path
+    // when her controller sends her somewhere — she no longer follows
+    // Aimmianna around (2.4.22: nobody auto-follows anymore). The ONE
+    // exception is riding: on a board with Aimmianna, they ride together
+    // beside her, as before.
+    if (guestAvatar && guestAvatar.model && guestAvatar.group.visible) {
+      if (skate.riders.has("autumn")) {
+        const sideX = Math.cos(her.heading), sideZ = -Math.sin(her.heading);
+        guestTmp.set(her.pos.x + sideX * 0.55, 0, her.pos.z + sideZ * 0.55);
+        // 2.4.20: smooth follow — followStep() closes the gap proportionally,
+        // so she glides beside Aimmianna instead of trailing and snapping.
+        const gStep = followStep(guest.pos.x, guest.pos.z, guestTmp.x, guestTmp.z, dt, her.speed);
+        if (gStep.moving) guest.heading = Math.atan2(guestTmp.x - guest.pos.x, guestTmp.z - guest.pos.z);
+        guest.pos.x = gStep.x; guest.pos.z = gStep.z; guest.moving = gStep.moving;
+      } else {
+        stepGuestPath(guest, dt);
+      }
+      // Builder World (2.4.22): she stands on built shapes too.
+      const gGround = builderGroundAt(guest.pos.x, guest.pos.z);
+      guest.pos.y += (gGround - guest.pos.y) * Math.min(1, dt * 8);
+      if (Math.abs(gGround - guest.pos.y) < 0.005) guest.pos.y = gGround;
       // A walk cancels an emote — she never glides through a hug.
       if (guest.moving) { guest.emoteLeft = 0; guest.heartPending = false; }
       // Emote timing: a hug ends with heart hands; any emote falls back
@@ -2722,17 +3313,25 @@ export function createWorld(opts) {
       guestAvatar.update(dt);
     }
 
-    // Summer follows Aimmianna too (2.4.14), on the opposite side from
-    // Autumn, at the same height as Aimmianna. She has no idle clip, so
-    // her idle is a procedural breathing bob — never frozen.
-    if (summerAvatar.model && summerAvatar.group.visible) {
+    // Summer (2.4.14): same rule as Autumn — her own path, no
+    // auto-follow; riding together is the only exception. She has no
+    // idle clip, so her idle is a procedural breathing bob — never frozen.
+    if (summerAvatar && summerAvatar.model && summerAvatar.group.visible) {
       if (!summerWardrobeApplied) { summerWardrobeApplied = true; applySummerWardrobe(); }
-      const sSideX = -Math.cos(her.heading), sSideZ = Math.sin(her.heading);
-      summerTmp.set(her.pos.x + sSideX * 0.55, 0, her.pos.z + sSideZ * 0.55);
-      // 2.4.20: smooth follow — see Autumn's block above.
-      const sStep = followStep(summer.pos.x, summer.pos.z, summerTmp.x, summerTmp.z, dt, her.speed);
-      if (sStep.moving) summer.heading = Math.atan2(summerTmp.x - summer.pos.x, summerTmp.z - summer.pos.z);
-      summer.pos.x = sStep.x; summer.pos.z = sStep.z; summer.moving = sStep.moving;
+      if (skate.riders.has("summer")) {
+        const sSideX = -Math.cos(her.heading), sSideZ = Math.sin(her.heading);
+        summerTmp.set(her.pos.x + sSideX * 0.55, 0, her.pos.z + sSideZ * 0.55);
+        // 2.4.20: smooth follow — see Autumn's block above.
+        const sStep = followStep(summer.pos.x, summer.pos.z, summerTmp.x, summerTmp.z, dt, her.speed);
+        if (sStep.moving) summer.heading = Math.atan2(summerTmp.x - summer.pos.x, summerTmp.z - summer.pos.z);
+        summer.pos.x = sStep.x; summer.pos.z = sStep.z; summer.moving = sStep.moving;
+      } else {
+        stepGuestPath(summer, dt);
+      }
+      // Builder World (2.4.22): she stands on built shapes too.
+      const sGround = builderGroundAt(summer.pos.x, summer.pos.z);
+      summer.pos.y += (sGround - summer.pos.y) * Math.min(1, dt * 8);
+      if (Math.abs(sGround - summer.pos.y) < 0.005) summer.pos.y = sGround;
       // A walk cancels an emote — she never glides through a hug.
       if (summer.moving) { summer.emoteLeft = 0; summer.heartPending = false; }
       // Emote timing: a hug ends with heart hands; any emote falls back
@@ -2756,20 +3355,28 @@ export function createWorld(opts) {
       // stands still with no clip playing. No bob while walking or
       // emoting — the clip owns the motion then.
       const sBreathing = !summer.moving && summer.emoteLeft <= 0;
-      summerAvatar.group.position.set(summer.pos.x, sBreathing ? 0.012 * Math.sin(t * 1.4) : 0, summer.pos.z);
+      summerAvatar.group.position.set(summer.pos.x, summer.pos.y + (sBreathing ? 0.012 * Math.sin(t * 1.4) : 0), summer.pos.z);
       summerAvatar.update(dt);
     }
 
-    // Tony follows Aimmianna too (2.4.15), standing in FRONT of her —
-    // Autumn and Summer already hold her two sides. He has a real idle
-    // clip, so no procedural idle is needed here.
-    if (tonyAvatar.model && tonyAvatar.group.visible) {
-      const tFwdX = Math.sin(her.heading), tFwdZ = Math.cos(her.heading);
-      tonyTmp.set(her.pos.x + tFwdX * 0.55, 0, her.pos.z + tFwdZ * 0.55);
-      // 2.4.20: smooth follow — see Autumn's block above.
-      const tStep = followStep(tony.pos.x, tony.pos.z, tonyTmp.x, tonyTmp.z, dt, her.speed);
-      if (tStep.moving) tony.heading = Math.atan2(tonyTmp.x - tony.pos.x, tonyTmp.z - tony.pos.z);
-      tony.pos.x = tStep.x; tony.pos.z = tStep.z; tony.moving = tStep.moving;
+    // Tony (2.4.15): same rule — his own path, no auto-follow; riding
+    // together is the only exception. He has a real idle clip, so no
+    // procedural idle is needed here.
+    if (tonyAvatar && tonyAvatar.model && tonyAvatar.group.visible) {
+      if (skate.riders.has("tony")) {
+        const tFwdX = Math.sin(her.heading), tFwdZ = Math.cos(her.heading);
+        tonyTmp.set(her.pos.x + tFwdX * 0.55, 0, her.pos.z + tFwdZ * 0.55);
+        // 2.4.20: smooth follow — see Autumn's block above.
+        const tStep = followStep(tony.pos.x, tony.pos.z, tonyTmp.x, tonyTmp.z, dt, her.speed);
+        if (tStep.moving) tony.heading = Math.atan2(tonyTmp.x - tony.pos.x, tonyTmp.z - tony.pos.z);
+        tony.pos.x = tStep.x; tony.pos.z = tStep.z; tony.moving = tStep.moving;
+      } else {
+        stepGuestPath(tony, dt);
+      }
+      // Builder World (2.4.22): he stands on built shapes too.
+      const tGround = builderGroundAt(tony.pos.x, tony.pos.z);
+      tony.pos.y += (tGround - tony.pos.y) * Math.min(1, dt * 8);
+      if (Math.abs(tGround - tony.pos.y) < 0.005) tony.pos.y = tGround;
       // A walk cancels an emote — he never glides through a hug.
       if (tony.moving) { tony.emoteLeft = 0; tony.heartPending = false; }
       // Emote timing: a hug ends with heart hands; any emote falls back
@@ -2946,6 +3553,11 @@ export function createWorld(opts) {
     getModelOutfit: () => avatar.outfitApplied || "original",
     enterLife: (figures) => { if (life) return; setLifeFigures(figures, "living_center"); startLifeView(); },
     leaveLife: () => setLifeFigures(null),
+    isLifeActive: () => !!life, // 2.4.22: true while Apartment Life runs (shared Tony hidden meanwhile)
+    // 2.4.22 — login-gated guests: rebuild the guest set when the login
+    // changes, send one guest walking on their own path, and say who
+    // the camera is following (her by default).
+    setLoggedIn, walkGuest, getFollowed: () => cam.followWho || "aimmianna",
     moveLifePlayer, moveLifeToSpot,
     getAvatarRepresentation: () => avatar.representation || "portrait",
     getAvatarMotion: () => avatar.motionState || null,
@@ -2955,8 +3567,10 @@ export function createWorld(opts) {
     // Autumn, the first guest avatar (2.4.13): lives in the shared
     // apartment only. guestEmote plays one of her clips (hug, heart_pose,
     // greet_02, wave_goodbye_02, ...); getGuest reports her live state.
-    guestEmote,
-    getGuest: () => ({ ready: !!guestAvatar.model, failed: guestAvatar.modelFailed, mode: guestAvatar.motion || null, moving: guest.moving, pos: { x: +guest.pos.x.toFixed(2), z: +guest.pos.z.toFixed(2) } }),
+    // 2.4.22: guests arrive lazily, one at a time after the room opens
+    // (loadGuestsSequentially) — getGuests reports who is here yet.
+    guestEmote, loadGuests: loadGuestsSequentially, getGuests,
+    getGuest: () => ({ ready: !!(guestAvatar && guestAvatar.model), failed: !!(guestAvatar && guestAvatar.modelFailed), mode: (guestAvatar && guestAvatar.motion) || null, moving: guest.moving, pos: { x: +guest.pos.x.toFixed(2), z: +guest.pos.z.toFixed(2) } }),
     // Summer, the second guest avatar (2.4.14): same shared-side-only
     // rules as Autumn, 1.78 units (5'5", the anchor of the 2.4.17 balance).
     // Her idle is procedural (no idle clip in her file); greet_04 is
@@ -2964,7 +3578,7 @@ export function createWorld(opts) {
     // goth emo princess wardrobe — outfits, shoes, makeup, hairstyles,
     // hair dye — shared side only, no private wiring of any kind.
     summerEmote,
-    getSummer: () => ({ ready: !!summerAvatar.model, failed: summerAvatar.modelFailed, mode: summerAvatar.motion || null, moving: summer.moving, pos: { x: +summer.pos.x.toFixed(2), z: +summer.pos.z.toFixed(2) } }),
+    getSummer: () => ({ ready: !!(summerAvatar && summerAvatar.model), failed: !!(summerAvatar && summerAvatar.modelFailed), mode: (summerAvatar && summerAvatar.motion) || null, moving: summer.moving, pos: { x: +summer.pos.x.toFixed(2), z: +summer.pos.z.toFixed(2) } }),
     setSummerWardrobe,
     getSummerWardrobe: () => ({ picks: { ...summerWardrobe }, catalogue: SUMMER_WARDROBE }),
     // Aura circles (2.4.19): one glow disc under each of the four
@@ -2972,9 +3586,10 @@ export function createWorld(opts) {
     // outfit pick; the others are fixed signature colours.
     getAuraCircles: () => ({
       aimmianna: { color: aimmiannaAura.material.color.getHex(), visible: aimmiannaAura.visible },
-      autumn: { color: autumnAura.material.color.getHex(), visible: autumnAura.visible },
-      summer: { color: summerAura.material.color.getHex(), visible: summerAura.visible },
-      tony: { color: tonyAura.material.color.getHex(), visible: tonyAura.visible },
+      // 2.4.22: a guest's disc only shows when that guest is actually here
+      autumn: { color: autumnAura.material.color.getHex(), visible: !!guestAvatar && autumnAura.visible },
+      summer: { color: summerAura.material.color.getHex(), visible: !!summerAvatar && summerAura.visible },
+      tony: { color: tonyAura.material.color.getHex(), visible: !!tonyAvatar && tonyAura.visible },
     }),
     // Tony, his own figure in the shared apartment (2.4.15): same
     // shared-side-only rules as the guests, 1.92 units (5'10", tallest of
@@ -2983,12 +3598,18 @@ export function createWorld(opts) {
     // only. greet_01 is his hello wave; his file has a real idle clip,
     // so no procedural idle is needed here.
     tonyEmote,
-    getTony: () => ({ ready: !!tonyAvatar.model, failed: tonyAvatar.modelFailed, mode: tonyAvatar.motion || null, moving: tony.moving, pos: { x: +tony.pos.x.toFixed(2), z: +tony.pos.z.toFixed(2) } }),
+    getTony: () => ({ ready: !!(tonyAvatar && tonyAvatar.model), failed: !!(tonyAvatar && tonyAvatar.modelFailed), mode: (tonyAvatar && tonyAvatar.motion) || null, moving: tony.moving, pos: { x: +tony.pos.x.toFixed(2), z: +tony.pos.z.toFixed(2) } }),
     // Skate park (2.4.20): skateStart rides (Aimmianna always rides
     // along), skateTrick pops ollie / kickflip / grind / air, skateSetGear
     // applies the saved board or skates design, getSkate reports the
     // session. Riders: "tony", "aimmianna", "autumn", "summer".
     skateStart, skateStop, skatePick, skateTrick, skateSetGear, getSkate,
+    // Builder World (2.4.22): shapes are plain specs; the panel owns
+    // the approval gate (her builds ask her first) and the saves — the
+    // world just builds, moves and stands on them. builderGroundAt is
+    // the top of the highest shape under a point, 0 on open ground.
+    builderAdd, builderUpdate, builderRemove, builderSetShapes, builderGet,
+    builderSelect, builderSetPlacing, builderGroundAt, builderDrive, getBuilder,
     setActivity: (a) => { her.activity = a; },
     setTalking: (on) => { her.talking = !!on; },
     setFollow, setRoomView,
