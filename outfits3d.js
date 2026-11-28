@@ -275,7 +275,11 @@ export const WEAPONS_3D = {
   staff:   { label: "Witch Staff", desc: "Dark wood staff topped with a glowing amethyst" },
   wand:    { label: "Spell Wand", desc: "Bone-white wand with a star-bright tip" },
   scythe:  { label: "Reaper Scythe", desc: "Tall shadow scythe with a moon-curved blade" },
-  bow:     { label: "Nightshade Bow", desc: "Black recurve bow strung with silver" }
+  bow:     { label: "Nightshade Bow", desc: "Black recurve bow strung with silver" },
+  // 2.4.20 — Final Fantasy-style: an oversized broadsword and a blade
+  // with a revolver chamber, built from the same primitives as the rest.
+  buster:  { label: "Buster Blade", desc: "An oversized broadsword, almost as tall as she is" },
+  gunblade: { label: "Gunblade", desc: "A long blade with a revolver chamber at the guard" }
 };
 export const hasWeapon3D = (name) => Object.prototype.hasOwnProperty.call(WEAPONS_3D, name);
 function metal(hex, glow) {
@@ -323,6 +327,34 @@ export function buildWeapon(base, name) {
     add(at(arc, 0, 0, -0.22), metal("#3a2a40"));
     const s = new THREE.CylinderGeometry(0.0012, 0.0012, 2 * 0.22 * Math.sin(Math.PI * 0.4), 4);
     add(at(s, 0, 0, -0.22 + 0.22 * Math.cos(Math.PI * 0.4)), metal("#e6e8ee"));
+  } else if (name === "buster") {
+    // Oversized broadsword: a wide flat blade with a pointed tip, a heavy
+    // guard and a short grip — held in both hands by the pose, in her
+    // right fist by the rig.
+    add(at(new THREE.CylinderGeometry(0.009, 0.009, 0.09, 10), 0, 0, 0), metal("#2a1c22"));
+    add(at(new THREE.BoxGeometry(0.2, 0.025, 0.02), 0, -0.05, 0), metal("#c9a24a"));
+    add(at(new THREE.SphereGeometry(0.014, 12, 8), 0, 0.05, 0), metal("#8a5cff", "#6a3cff"));
+    const blade = new THREE.BoxGeometry(0.15, 0.5, 0.01);
+    add(at(blade, 0, -0.31, 0), metal("#d9dde6"));
+    const tip = new THREE.CylinderGeometry(0.001, 0.075, 0.12, 4, 1);
+    tip.scale(1, 1, 0.12);
+    add(at(tip, 0, -0.62, 0), metal("#d9dde6"));
+    const edge = new THREE.BoxGeometry(0.008, 0.5, 0.012);
+    add(at(edge, 0.075, -0.31, 0), metal("#b49bff", "#b49bff"));
+  } else if (name === "gunblade") {
+    // A long blade with a revolver chamber at the guard and a short
+    // barrel running under the blade.
+    add(at(new THREE.CylinderGeometry(0.008, 0.008, 0.07, 10), 0, 0, 0), metal("#2a1c22"));
+    add(at(new THREE.BoxGeometry(0.07, 0.012, 0.016), 0, -0.04, 0), metal("#c9a24a"));
+    const blade = new THREE.CylinderGeometry(0.0025, 0.013, 0.3, 4, 1);
+    blade.scale(1, 1, 0.35);
+    add(at(blade, 0, -0.19, 0), metal("#d9dde6"));
+    const chamber = new THREE.CylinderGeometry(0.028, 0.028, 0.05, 10);
+    chamber.rotateX(Math.PI / 2);
+    add(at(chamber, 0, -0.045, 0.01), metal("#3a3440"));
+    const barrel = new THREE.CylinderGeometry(0.007, 0.007, 0.12, 8);
+    barrel.rotateX(Math.PI / 2);
+    add(at(barrel, 0, -0.1, 0.035), metal("#1c1a20"));
   }
   return list;
 }
