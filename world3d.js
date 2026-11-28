@@ -571,7 +571,12 @@ class BuiltInAvatar extends BillboardAvatar {
   async loadModel() {
     try {
       const { GLTFLoader } = await import("./vendor/loaders/GLTFLoader.js");
+      // 2.4.24: models are Draco-compressed — the decoder lives in vendor/draco/.
+      const { DRACOLoader } = await import("./vendor/loaders/DRACOLoader.js");
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath("./vendor/draco/");
       const loader = new GLTFLoader();
+      loader.setDRACOLoader(dracoLoader);
       const load = (filename) => loader.loadAsync(new URL(`./assets/models/${filename}`, import.meta.url).href);
       let rigged = true, gltf;
       try {
@@ -831,7 +836,12 @@ export function createWorld(opts) {
   const onRoomChange = opts.onRoomChange || (() => {});
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && window.innerWidth < 1100);
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", alpha: false });
+  // 2.4.24 Light mode: fewer heavy loads — no guest models, no aura discs,
+  // no drifting petals, and (from a fresh open) no edge smoothing.
+  // antialias is fixed when the renderer is made, so that part only takes
+  // effect after the app is closed and reopened; the rest flips live.
+  let lightMode = !!opts.lightMode;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lightMode, powerPreference: "high-performance", alpha: false });
   let pixelRatio = Math.min(window.devicePixelRatio || 1, isMobile ? 2 : 2);
   renderer.setPixelRatio(pixelRatio);
   renderer.setClearColor(0x07050b, 1);
@@ -1916,14 +1926,14 @@ export function createWorld(opts) {
      only, and nothing about her private side goes to the shared world. */
   const GUEST_HEIGHT = 1.86; // 2.4.17: Autumn 5'8" (1.86) — was 1.7
   const GUEST_MODEL = "Autumn_Tripo3d_0_ggkz.glb";
-  const GUEST_VERSION = "2418"; // 2.4.22: her file last changed in 2.4.18 (head_match) — bump ONLY when her file actually changes
-  const GUEST_PARTS = 5; // chunked upload: .part0..4, 14,466,422 bytes each (last 14,466,420) — 2.4.18 head_match bake grew the file to 72,332,108 bytes
+  const GUEST_VERSION = "2424"; // 2.4.24: Draco-compressed (44,463,092 bytes, was 72,332,108) — bump ONLY when her file actually changes
+  const GUEST_PARTS = 5; // chunked upload: .part0..4, 8,892,619 bytes each (last 8,892,616) — Draco file is 44,463,092 bytes
   // Summer (2.4.14) — 1.78 units, the 5'5" anchor of the 2.4.17 balance.
   // She is now 0.03 shorter than Aimmianna (1.81), not level with her.
   const SUMMER_HEIGHT = 1.78;
   const SUMMER_MODEL = "Summer_0_cy1n.glb";
-  const SUMMER_VERSION = "2420"; // 2.4.22: her file last changed in 2.4.20 (reshape) — bump ONLY when her file actually changes
-  const SUMMER_PARTS = 5; // chunked upload: .part0..4, 14,395,229 bytes each (last 14,395,228) — 2.4.20 reshape grew the file to 71,976,144 bytes
+  const SUMMER_VERSION = "2424"; // 2.4.24: Draco-compressed (46,062,796 bytes, was 71,976,144) — bump ONLY when her file actually changes
+  const SUMMER_PARTS = 5; // chunked upload: .part0..4, 9,212,560 bytes each (last 9,212,556) — Draco file is 46,062,796 bytes
   /* Chunked GLB loader (2.4.14 patch) — the git push to github.com is
      blocked, so big models ship as ~16 MB pieces through the Contents
      API instead of one file. Fetch the parts in order, glue the bytes
@@ -2001,7 +2011,12 @@ export function createWorld(opts) {
     async load() {
       try {
         const { GLTFLoader } = await import("./vendor/loaders/GLTFLoader.js");
+        // 2.4.24: guest models are Draco-compressed — decoder in vendor/draco/.
+        const { DRACOLoader } = await import("./vendor/loaders/DRACOLoader.js");
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath("./vendor/draco/");
         const loader = new GLTFLoader();
+        loader.setDRACOLoader(dracoLoader);
         const gltf = await loadChunkedGlb(loader, this.modelFile, this.partCount, this.version);
         const { scene: model, animations } = gltf;
         this.mixer = new THREE.AnimationMixer(model);
@@ -2252,6 +2267,10 @@ export function createWorld(opts) {
     remotePresent[who] = !!on;
     const g = guestStateFor(who);
     if (on) {
+      // 2.4.24 Light mode: presence is still recorded above, but no
+      // avatar is built — their position just isn't drawn. Turning
+      // Light mode off rebuilds them (see setLightMode).
+      if (lightMode) return;
       const av = liveGuestAvatar(who);
       if (!av) {
         if (who === "autumn") guestAvatar = makeAutumnAvatar();
@@ -2426,8 +2445,8 @@ export function createWorld(opts) {
      wiring of any kind. */
   const TONY_HEIGHT = 1.92; // 2.4.17: Tony 5'10" (1.92) — was 1.78
   const TONY_MODEL = "Tony_0_7ymz.glb";
-  const TONY_VERSION = "2418"; // 2.4.22: his file last changed in 2.4.18 (head_match) — bump ONLY when his file actually changes
-  const TONY_PARTS = 5; // chunked upload: .part0..4, 12,603,391 bytes each (last 12,603,388) — 2.4.18 head_match bake grew the file to 63,016,952 bytes
+  const TONY_VERSION = "2424"; // 2.4.24: Draco-compressed (35,228,268 bytes, was 63,016,952) — bump ONLY when his file actually changes
+  const TONY_PARTS = 5; // chunked upload: .part0..4, 7,045,654 bytes each (last 7,045,652) — Draco file is 35,228,268 bytes
   const tony = {
     pos: new THREE.Vector3(SPOTS.living_center.x, 0, SPOTS.living_center.z + 0.55),
     heading: 0, moving: false, emoteLeft: 0, heartPending: false,
@@ -2469,6 +2488,7 @@ export function createWorld(opts) {
     return key === "autumn" ? guestAvatar : key === "summer" ? summerAvatar : tonyAvatar;
   }
   async function loadGuestsSequentially() {
+    if (lightMode) return; // 2.4.24 Light mode: guests don't load at all
     if (guestLoadRunning) return;
     const pending = pendingGuestLoads();
     if (!pending.length) return; // nobody logged in here, or everyone already here
@@ -2504,6 +2524,9 @@ export function createWorld(opts) {
   // whoever shouldn't, and load anyone newly built — one at a time.
   function setLoggedIn(who) {
     loggedIn = who || null;
+    // 2.4.24 Light mode: no guest avatars are built while it is on —
+    // the login is still recorded, so turning it off loads them.
+    if (!lightMode) {
     // 2.4.23: a login change must not tear down a guest who is here
     // because they are present in the live session — only the local
     // avatar follows the login; remote ones follow the roster.
@@ -2513,6 +2536,7 @@ export function createWorld(opts) {
     else if (loggedIn !== "summer" && summerAvatar && !remotePresent.summer) { disposeGuestAvatar(summerAvatar); summerAvatar = null; }
     if (loggedIn === "tony" && !tonyAvatar) tonyAvatar = makeTonyAvatar();
     else if (loggedIn !== "tony" && tonyAvatar && !remotePresent.tony) { disposeGuestAvatar(tonyAvatar); tonyAvatar = null; }
+    }
     loadGuestsSequentially();
   }
   function getGuests() {
@@ -2521,6 +2545,46 @@ export function createWorld(opts) {
       summer: { ready: !!(summerAvatar && summerAvatar.model), failed: !!(summerAvatar && summerAvatar.modelFailed), visible: !!(summerAvatar && summerAvatar.group.visible) },
       tony: { ready: !!(tonyAvatar && tonyAvatar.model), failed: !!(tonyAvatar && tonyAvatar.modelFailed), visible: !!(tonyAvatar && tonyAvatar.group.visible) },
     };
+  }
+  // Light mode (2.4.24): one tick box in Settings, per device. When on,
+  // guest models don't load at all (loadGuestsSequentially + the login /
+  // live build paths all check lightMode), the aura discs and the drifting
+  // petals turn off, and — from a fresh open — edge smoothing is off
+  // (decided when the renderer was made, above). A remote guest with no
+  // figure just isn't drawn: their live position still arrives, but
+  // setRemoteTarget finds no avatar and does nothing, so live-together
+  // keeps working with no errors and no crash. Turning it off rebuilds
+  // whoever should be here (logged in here, or present in the live
+  // session) and loads them, one at a time.
+  function setLightMode(on) {
+    const was = lightMode;
+    lightMode = !!on;
+    aimmiannaAura.visible = !lightMode;
+    autumnAura.visible = !lightMode;
+    summerAura.visible = !lightMode;
+    tonyAura.visible = !lightMode;
+    for (const p of petals) p.mesh.visible = !lightMode;
+    if (lightMode) {
+      // Free the guest models right away — that is the whole point.
+      if (guestAvatar) { disposeGuestAvatar(guestAvatar); guestAvatar = null; }
+      if (summerAvatar) { disposeGuestAvatar(summerAvatar); summerAvatar = null; }
+      if (tonyAvatar) { disposeGuestAvatar(tonyAvatar); tonyAvatar = null; }
+    } else if (was) {
+      // Rebuild whoever should be here now, then load them one at a time.
+      if (loggedIn === "autumn" && !guestAvatar) guestAvatar = makeAutumnAvatar();
+      if (loggedIn === "summer" && !summerAvatar) summerAvatar = makeSummerAvatar();
+      if (loggedIn === "tony" && !tonyAvatar) tonyAvatar = makeTonyAvatar();
+      for (const who of ["autumn", "summer", "tony"]) {
+        if (remotePresent[who] && !liveGuestAvatar(who)) {
+          if (who === "autumn") guestAvatar = makeAutumnAvatar();
+          else if (who === "summer") summerAvatar = makeSummerAvatar();
+          else tonyAvatar = makeTonyAvatar();
+          const f = fadeState(guestStateFor(who)); f.k = 0; f.dir = 0; f.mats = null; // arrive faded in
+          remotePlaced[who] = false;
+        }
+      }
+      loadGuestsSequentially();
+    }
   }
   function tonyEmote(name) {
     if (!tonyAvatar || !tonyAvatar.actions) return false;
@@ -3625,7 +3689,8 @@ export function createWorld(opts) {
       k.mesh.rotation.y = -a;
     }
     // sakura petals drift down and reset at the top
-    for (const p of petals) {
+    // 2.4.24 Light mode: the petals stay still (and hidden) — less to draw.
+    if (!lightMode) for (const p of petals) {
       p.mesh.position.y -= p.speed * dt;
       p.mesh.position.x += Math.sin(t * 0.8 + p.phase) * dt * 0.15;
       p.mesh.rotation.z += dt * 0.5;
@@ -3753,6 +3818,10 @@ export function createWorld(opts) {
     if (document.hidden) running = false;
     else if (!running) { running = true; clock.getDelta(); tick(); }
   });
+  // 2.4.24 Light mode: apply the saved per-device setting from the
+  // start (auras + petals off, guests never built) — edge smoothing
+  // was already decided when the renderer was made above.
+  setLightMode(lightMode);
   tick();
 
   /* ------------ public API */
@@ -3848,6 +3917,10 @@ export function createWorld(opts) {
     gyroOff() { window.removeEventListener("deviceorientation", onOrient); cam.gyro.on = false; cam.gyro.base = null; cam.gyro.tx = 0; cam.gyro.ty = 0; },
     setPageOffset(x) { cam.page = Math.max(0, Math.min(1, Number(x) || 0.5)); },
     setLowPower(on) { lowPower = !!on; pixelRatio = on ? 1 : Math.min(window.devicePixelRatio || 1, 2); renderer.setPixelRatio(pixelRatio); resize(); },
+    // 2.4.24 Light mode — see setLightMode above. Edge smoothing
+    // (antialias) is set when the renderer is made, so flipping this
+    // on only takes that part effect after a close + reopen.
+    setLightMode,
     setAnchors: (els) => { anchors.length = 0; els.forEach((e) => anchors.push(e)); },
     lamp(room, action) {
       const ids = room === "all" ? ROOM_ORDER : [room];
