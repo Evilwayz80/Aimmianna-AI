@@ -32,7 +32,7 @@ const NATIVE = window.AimmiannaNative || null;          // Android bridge (APK o
 const IS_WALLPAPER = PARAMS.get("mode") === "wallpaper";
 const IS_ANDROID_APP = !!NATIVE;
 const IS_ANDROID_WALLPAPER = IS_ANDROID_APP && IS_WALLPAPER;
-const VERSION = "Aimmianna 3D v2.4.24";
+const VERSION = "Aimmianna 3D v2.4.25";
 let world = null;          // the 3D apartment (set in initWorld)
 let lifeSim = null, lifeLoading = false;
 let pendingLabIdea = null; // dev idea waiting to be carried into Project Lab
@@ -6282,9 +6282,21 @@ function onWorldTap(name, info) {
         // yet): the tap walks her, as before.
         const who = whoIsLoggedIn();
         if ((who === "tony" || who === "summer" || who === "autumn") && world.getGuests && world.getGuests()[who] && world.getGuests()[who].ready) {
-          world.walkGuest(who, info.point.x, info.point.z);
-          world.setFollow(who);
-          setStatus("walking over", 2500);
+          // 2.4.25: while riding, a floor tap sets the rider's OWN path —
+          // but the world tick ignores it (the rider follows a spot beside
+          // her instead), so taps could never move the pair. While riding,
+          // steer her instead: she leads and the rider rolls beside her.
+          let riding = false;
+          try { const sk = world.getSkate && world.getSkate(); riding = !!(sk && Array.isArray(sk.riding) && sk.riding.includes(who)); } catch (e) { riding = false; }
+          if (riding) {
+            world.goToPoint(info.point.x, info.point.z);
+            world.setFollow(who);
+            setStatus("rolling over", 2500);
+          } else {
+            world.walkGuest(who, info.point.x, info.point.z);
+            world.setFollow(who);
+            setStatus("walking over", 2500);
+          }
         } else if (who === "tony" || who === "summer" || who === "autumn") {
           toast("Still bringing you in — tap again in a moment.");
         } else {
@@ -6909,6 +6921,23 @@ function initWorld() {
   if (state.lightMode && world.setLightMode) world.setLightMode(true); // 2.4.24: guests stay unloaded, auras + petals off
   // follow her by default
   world.setFollow(); refreshRoomBar();
+  // 2.4.25: if her animated model did not come from the small (Draco)
+  // file, say so plainly once — a stiff stand-in used to fail silently,
+  // and Tony had no way to know. The check polls because her model loads
+  // in the background; it stops after a minute if it never lands.
+  let modelToastChecks = 0;
+  const modelToastTimer = setInterval(() => {
+    modelToastChecks++;
+    let m = null;
+    try { m = world.getAimmiannaModel && world.getAimmiannaModel(); } catch (e) { m = null; }
+    if (m && m.source) {
+      clearInterval(modelToastTimer);
+      if (m.source === "nodraco") toast("Her animated model loaded from the backup on this phone — she should move normally. Tell Shadow if her arms still look wrong.");
+      else if (m.source === "static") toast("Her animated model didn't load on this phone, so she's on the stiff stand-in — tell Shadow.");
+    } else if (modelToastChecks >= 30) {
+      clearInterval(modelToastTimer);
+    }
+  }, 2000);
   connectLiveAfterLogin(); // 2.4.23: live joins once the world is up (login may already be known)
   setInterval(refreshRoomBar, 1500);
   window.__world = world; // handy for debugging / future avatar swaps
